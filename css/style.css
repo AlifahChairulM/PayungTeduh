@@ -1,0 +1,16 @@
+/* Custom Stylesheet untuk PayungTeduh */
+
+/* Haluskan efek transisi pada tombol dan tab */
+button, input, select {
+  transition: all 0.2s ease-in-out;
+}
+
+/* Sembunyikan panah input type number */
+input[type=number]::-webkit-inner-spin-button, 
+input[type=number]::-webkit-outer-spin-button { 
+  -webkit-appearance: none; 
+  margin: 0; 
+}
+input[type=number] {
+  -moz-appearance: textfield;
+}
