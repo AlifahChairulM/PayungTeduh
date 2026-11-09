@@ -9,7 +9,7 @@
   <!-- Custom CSS -->
   <link rel="stylesheet" href="css/style.css">
 </head>
-<body class="bg-slate-100 min-h-screen flex items-center justify-center p-4">
+<body class="bg-slate-100 min-h-screen flex flex-col items-center justify-center p-4">
   <div class="bg-white p-6 rounded-2xl shadow-xl w-full max-w-md border border-slate-200">
     <div class="text-center mb-6">
       <h1 class="text-2xl font-bold text-slate-800">☂️ PayungTeduh</h1>
@@ -76,17 +76,48 @@
 
     <!-- FORM KEMBALIKAN PAYUNG SEWA -->
     <div id="form-return" class="space-y-4 hidden">
-      <div>
-        <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Email Terdaftar</label>
-        <input type="email" id="ret_email" required class="w-full p-2.5 bg-slate-50 border rounded-lg text-sm outline-none">
+      <!-- 1. OPSI PILIHAN METODE KEMBALIKAN -->
+      <div id="return-options" class="space-y-3">
+        <p class="text-xs font-bold text-slate-600 uppercase text-center">Pilih Metode Pengembalian</p>
+        <div class="grid grid-cols-2 gap-3">
+          <button type="button" onclick="selectReturnMethod('rfid')" class="p-4 border-2 border-slate-200 rounded-xl hover:border-blue-500 hover:bg-blue-50 flex flex-col items-center text-center transition">
+            <span class="text-2xl mb-1">🏷️</span>
+            <span class="font-bold text-xs text-slate-700">Scan Stiker RFID</span>
+            <span class="text-[10px] text-slate-400">Tempelkan stiker payung ke scanner</span>
+          </button>
+          <button type="button" onclick="selectReturnMethod('email')" class="p-4 border-2 border-slate-200 rounded-xl hover:border-blue-500 hover:bg-blue-50 flex flex-col items-center text-center transition">
+            <span class="text-2xl mb-1">✉️</span>
+            <span class="font-bold text-xs text-slate-700">Kode OTP Email</span>
+            <span class="text-[10px] text-slate-400">Verifikasi dengan email terdaftar</span>
+          </button>
+        </div>
       </div>
-      <button onclick="requestOTP('SEWA', 'ret_email')" class="w-full py-2.5 bg-slate-800 text-white font-bold rounded-lg text-xs hover:bg-slate-900 transition">📩 Kirim Kode OTP Verifikasi</button>
-      
-      <div class="border-t pt-3">
-        <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Masukkan Kode OTP</label>
-        <input type="text" id="ret_otp" maxlength="6" placeholder="4 Digit OTP" class="w-full p-2.5 bg-slate-50 border rounded-lg text-sm outline-none text-center font-mono text-lg">
+
+      <!-- 2. LAYAR PETUNJUK SCAN RFID -->
+      <div id="return-rfid-view" class="space-y-4 hidden text-center p-4 bg-slate-50 border rounded-xl">
+        <div class="animate-pulse text-4xl mb-2">📡</div>
+        <h3 class="font-bold text-slate-800 text-sm">Silakan Scan Stiker RFID</h3>
+        <p class="text-xs text-slate-500">Tempelkan stiker RFID yang berada di payung ke alat scanner scanner fisik loker.</p>
+        <button type="button" onclick="resetReturnView()" class="mt-2 text-xs text-blue-600 font-semibold underline">← Kembali ke Pilihan</button>
       </div>
-      <button onclick="verifyOTP('SEWA', 'ret_email', 'ret_otp')" class="w-full py-3 bg-green-600 text-white font-bold rounded-xl shadow hover:bg-green-700 transition">🔄 Verifikasi & Buka Loker</button>
+
+      <!-- 3. FORM EMAIL & OTP -->
+      <div id="return-email-view" class="space-y-4 hidden">
+        <div>
+          <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Email Terdaftar</label>
+          <input type="email" id="ret_email" required class="w-full p-2.5 bg-slate-50 border rounded-lg text-sm outline-none">
+        </div>
+        <button onclick="requestOTP('SEWA', 'ret_email')" class="w-full py-2.5 bg-slate-800 text-white font-bold rounded-lg text-xs hover:bg-slate-900 transition">📩 Kirim Kode OTP Verifikasi</button>
+        
+        <div class="border-t pt-3">
+          <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Masukkan Kode OTP</label>
+          <input type="text" id="ret_otp" maxlength="6" placeholder="4 Digit OTP" class="w-full p-2.5 bg-slate-50 border rounded-lg text-sm outline-none text-center font-mono text-lg">
+        </div>
+        <button onclick="verifyOTP('SEWA', 'ret_email', 'ret_otp')" class="w-full py-3 bg-green-600 text-white font-bold rounded-xl shadow hover:bg-green-700 transition">🔄 Verifikasi & Buka Loker</button>
+        <div class="text-center">
+          <button type="button" onclick="resetReturnView()" class="text-xs text-blue-600 font-semibold underline">← Ganti Metode Pengembalian</button>
+        </div>
+      </div>
     </div>
 
     <!-- FORM AMBIL PAYUNG TITIPAN -->
@@ -107,6 +138,15 @@
     <!-- BOX STATUS NOTIFIKASI -->
     <div id="status-box" class="mt-4 p-3 rounded-xl hidden text-sm font-semibold whitespace-pre-line"></div>
   </div>
+
+  <!-- FOOTER CUSTOMER SERVICE WHATSAPP -->
+  <footer class="mt-6 text-center text-xs text-slate-500">
+    <p class="mb-1">Butuh bantuan kendala loker?</p>
+    <a href="https://wa.me/6288805598510" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1.5 font-bold text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-full border border-emerald-200 hover:bg-emerald-100 transition shadow-sm">
+      <span>💬 Customer Service:</span>
+      <span>088805598510</span>
+    </a>
+  </footer>
 
   <!-- App Script -->
   <script src="js/app.js"></script>

@@ -206,18 +206,66 @@ void loop() {
   if (rfid.PICC_IsNewCardPresent() && rfid.PICC_ReadCardSerial()) {
     String uid = "";
     for (byte i = 0; i < rfid.uid.size; i++) {
+      if (rfid.uid.uidByte[i] < 0x10) uid += "0";
       uid += String(rfid.uid.uidByte[i], HEX);
+      if (i < rfid.uid.size - 1) uid += " ";
     }
-    // Kirim UID ke Backend via MQTT
-    String pesan = "RFID_SCAN:" + uid;
-    client.publish(topicStatus, pesan.c_str());
-    Serial.println("Pesan MQTT Terkirim: " + pesan);
+    uid.toUpperCase(); // Ubah ke format huruf kapital (misal: "61 F7 28 B5")
+    
+    Serial.println("UID Terdeteksi: " + uid);
+
+    // VALIDASI KHUSUS STIKER PERSEWAAN PAYUNGTEDUH
+    if (uid == "61 F7 28 B5" || uid == "51 B0 25 B5") {
+      bunyikanBuzzer();
+      
+      display.clearDisplay();
+      display.setCursor(0, 0);
+      display.print("Stiker Valid!");
+      display.setCursor(0, 20);
+      display.print("Memproses...");
+      display.display();
+
+      // Kirim UID Valid ke Backend via MQTT
+      String pesan = "RFID_VALID:" + uid;
+      client.publish(topicStatus, pesan.c_str());
+      Serial.println("Pesan MQTT Terkirim: " + pesan);
+
+      // (Opsional) Buka Pintu Loker Sewa Aktif jika RFID Valid
+      if (slotAktif > 0) {
+        prosesBukaPintu(slotAktif);
+      } else {
+        // Jika belum ada slot aktif, buka slot sewa default (Slot 1)
+        prosesBukaPintu(1);
+      }
+    } else {
+      // BILA STIKER DITOLAK
+      // Bunyikan buzzer pendek 3x (tanda error)
+      for (int i = 0; i < 3; i++) {
+        digitalWrite(BUZZER_PIN, HIGH); delay(100);
+        digitalWrite(BUZZER_PIN, LOW); delay(100);
+      }
+
+      display.clearDisplay();
+      display.setCursor(0, 0);
+      display.print("AKSES DITOLAK!");
+      display.setCursor(0, 20);
+      display.print("Stiker Bukan Milik");
+      display.setCursor(0, 35);
+      display.print("Persewaan Payung!");
+      display.display();
+
+      // Kirim status penolakan ke Web Backend
+      client.publish(topicStatus, "RFID_INVALID");
+      Serial.println("❌ Akses Ditolak: Stiker ilegal/bukan milik persewaan.");
+      
+      delay(3000);
+      tampilkanIdle();
+    }
     
     rfid.PICC_HaltA();
     rfid.PCD_StopCrypto1();
-    delay(2000); // Debounce RFID
+    delay(1000); // Debounce RFID
   }
-}
 
 // --- FUNGSI MQTT CALLBACK (Menerima perintah dari Backend Node.js) ---
 void callback(char* topic, byte* payload, unsigned int length) {

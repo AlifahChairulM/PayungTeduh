@@ -5,7 +5,7 @@ const API_URL = 'http://localhost:3000/api';
 // 1. NAVIGASI TAB UI (Sewa/Titip, Kembalikan, Ambil)
 // -------------------------------------------------------------
 function switchTab(tab) {
-  // Sembunyikan semua form
+  // Sembunyikan semua form utama
   document.getElementById('form-new').classList.add('hidden');
   document.getElementById('form-return').classList.add('hidden');
   document.getElementById('form-retrieve').classList.add('hidden');
@@ -24,6 +24,7 @@ function switchTab(tab) {
   } else if (tab === 'return') {
     document.getElementById('form-return').classList.remove('hidden');
     document.getElementById('tab-return').className = activeClass;
+    resetReturnView(); // Reset tampilan sub-opsi pengembalian
   } else if (tab === 'retrieve') {
     document.getElementById('form-retrieve').classList.remove('hidden');
     document.getElementById('tab-retrieve').className = activeClass;
@@ -31,7 +32,33 @@ function switchTab(tab) {
 }
 
 // -------------------------------------------------------------
-// 2. HELPER UI NOTIFIKASI STATUS
+// 2. KEMBALIKAN PAYUNG: SWITCH PILIHAN METODE (RFID vs EMAIL)
+// -------------------------------------------------------------
+function selectReturnMethod(method) {
+  const optionsView = document.getElementById('return-options');
+  const rfidView = document.getElementById('return-rfid-view');
+  const emailView = document.getElementById('return-email-view');
+
+  optionsView.classList.add('hidden');
+
+  if (method === 'rfid') {
+    rfidView.classList.remove('hidden');
+    emailView.classList.add('hidden');
+    showStatus('Silakan periksa loker fisik. Tempelkan stiker RFID payung ke sensor pembaca.', true);
+  } else if (method === 'email') {
+    emailView.classList.remove('hidden');
+    rfidView.classList.add('hidden');
+  }
+}
+
+function resetReturnView() {
+  document.getElementById('return-options').classList.remove('hidden');
+  document.getElementById('return-rfid-view').classList.add('hidden');
+  document.getElementById('return-email-view').classList.add('hidden');
+}
+
+// -------------------------------------------------------------
+// 3. HELPER UI NOTIFIKASI STATUS
 // -------------------------------------------------------------
 function showStatus(msg, isSuccess) {
   const box = document.getElementById('status-box');
@@ -41,7 +68,7 @@ function showStatus(msg, isSuccess) {
 }
 
 // -------------------------------------------------------------
-// 3. HANDLER TRANSAKSI BARU (SEWA / TITIP)
+// 4. HANDLER TRANSAKSI BARU (SEWA / TITIP)
 // -------------------------------------------------------------
 async function handleNewTransaction(e) {
   e.preventDefault();
@@ -67,7 +94,7 @@ async function handleNewTransaction(e) {
 }
 
 // -------------------------------------------------------------
-// 4. HANDLER REQUEST KODE OTP
+// 5. HANDLER REQUEST KODE OTP
 // -------------------------------------------------------------
 async function requestOTP(type, emailInputId) {
   const email = document.getElementById(emailInputId).value;
@@ -87,7 +114,7 @@ async function requestOTP(type, emailInputId) {
 }
 
 // -------------------------------------------------------------
-// 5. HANDLER VERIFIKASI KODE OTP
+// 6. HANDLER VERIFIKASI KODE OTP
 // -------------------------------------------------------------
 async function verifyOTP(type, emailInputId, otpInputId) {
   const email = document.getElementById(emailInputId).value;

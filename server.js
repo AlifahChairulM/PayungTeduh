@@ -21,6 +21,20 @@ mqttClient.on("connect", () => {
   mqttClient.subscribe(topicStatus);
 });
 
+mqttClient.on("message", (topic, message) => {
+  const msg = message.toString();
+  console.log(`📩 MQTT Received [${topic}]: ${msg}`);
+
+  if (msg.startsWith("RFID_VALID:")) {
+    const uid = msg.split(":")[1];
+    console.log(`✅ Stiker PayungTeduh Valid Terdeteksi: ${uid}`);
+  } else if (msg === "RFID_INVALID") {
+    console.warn(
+      "⚠️ Peringatan: Ada percobaan scan stiker yang bukan milik persewaan!",
+    );
+  }
+});
+
 function generateOTP() {
   return Math.floor(1000 + Math.random() * 9000).toString();
 }
@@ -72,12 +86,10 @@ app.post("/api/transaction", async (req, res) => {
       .order("position_order", { ascending: true });
 
     if (!lockers || lockers.length === 0) {
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: isSewa ? "Stok Payung Habis!" : "Loker Titip Penuh!",
-        });
+      return res.status(400).json({
+        success: false,
+        message: isSewa ? "Stok Payung Habis!" : "Loker Titip Penuh!",
+      });
     }
     const selectedLocker = lockers[0];
 
@@ -142,12 +154,10 @@ app.post("/api/request-otp", async (req, res) => {
       .ilike("email", cleanEmail);
 
     if (!users || users.length === 0) {
-      return res
-        .status(404)
-        .json({
-          success: false,
-          message: "Data Email tidak ditemukan dalam sistem!",
-        });
+      return res.status(404).json({
+        success: false,
+        message: "Data Email tidak ditemukan dalam sistem!",
+      });
     }
 
     const userIds = users.map((u) => u.id);
@@ -163,27 +173,23 @@ app.post("/api/request-otp", async (req, res) => {
       .limit(1);
 
     if (!trans || trans.length === 0) {
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: `Tidak ada transaksi ${type} aktif untuk email ini.`,
-        });
+      return res.status(400).json({
+        success: false,
+        message: `Tidak ada transaksi ${type} aktif untuk email ini.`,
+      });
     }
 
     // 3. Generate Kode OTP
     const otp = generateOTP();
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
 
-    await supabase
-      .from("otp_codes")
-      .insert([
-        {
-          email: cleanEmail,
-          otp_code: otp,
-          expires_at: expiresAt.toISOString(),
-        },
-      ]);
+    await supabase.from("otp_codes").insert([
+      {
+        email: cleanEmail,
+        otp_code: otp,
+        expires_at: expiresAt.toISOString(),
+      },
+    ]);
 
     console.log(
       `📧 [EMAIL OTP] Kode OTP untuk ${cleanEmail} (${type}): ${otp}`,
@@ -225,12 +231,10 @@ app.post("/api/verify-otp", async (req, res) => {
       .limit(1);
 
     if (!validOtp || validOtp.length === 0) {
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: "Kode OTP Salah atau Sudah Kadaluwarsa!",
-        });
+      return res.status(400).json({
+        success: false,
+        message: "Kode OTP Salah atau Sudah Kadaluwarsa!",
+      });
     }
 
     // 2. Cari transaksi aktif
