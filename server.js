@@ -10,11 +10,14 @@ app.use(express.json());
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
-  process.env.SUPABASE_KEY,
+  process.env.SUPABASE_KEY
 );
 const mqttClient = mqtt.connect("mqtt://broker.hivemq.com:1883");
 const topicCmd = "umbllocker/command";
 const topicStatus = "umbllocker/status";
+
+let sseClients = [];
+let irState = { ir1: 1, ir2: 1, ir4: 0, ir5: 0 };
 
 mqttClient.on("connect", () => {
   console.log("✅ Connected to HiveMQ Broker!");
@@ -23,16 +26,38 @@ mqttClient.on("connect", () => {
 
 mqttClient.on("message", (topic, message) => {
   const msg = message.toString();
-  console.log(`📩 MQTT Received [${topic}]: ${msg}`);
+  console.log(`📡 MQTT Received [${topic}]: ${msg}`);
 
-  if (msg.startsWith("RFID_VALID:")) {
+  if (msg.startsWith("IR_STATE:")) {
+    const parts = msg.replace("IR_STATE:", "").split(",").map(Number);
+    irState.ir1 = parts[0];
+    irState.ir2 = parts[1];
+    irState.ir4 = parts[2];
+    irState.ir5 = parts[3];
+  } else if (msg.startsWith("RFID_VALID:")) {
     const uid = msg.split(":")[1];
-    console.log(`✅ Stiker PayungTeduh Valid Terdeteksi: ${uid}`);
+    broadcastSSE({ type: "RFID_SUCCESS", uid: uid, message: "🎉 Stiker Valid! Pintu Loker Berhasil Dibuka." });
   } else if (msg === "RFID_INVALID") {
-    console.warn(
-      "⚠️ Peringatan: Ada percobaan scan stiker yang bukan milik persewaan!",
-    );
+    broadcastSSE({ type: "RFID_FAILED", message: "❌ Akses Ditolak! Stiker Bukan Milik Persewaan." });
   }
+});
+
+function broadcastSSE(data) {
+  sseClients.forEach((client) => client.res.write(`data: ${JSON.stringify(data)}\n\n`));
+}
+
+app.get("/api/events", (req, res) => {
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+
+  const clientId = Date.now();
+  const newClient = { id: clientId, res };
+  sseClients.push(newClient);
+
+  req.on("close", () => {
+    sseClients = sseClients.filter((c) => c.id !== clientId);
+  });
 });
 
 function generateOTP() {
@@ -40,65 +65,52 @@ function generateOTP() {
 }
 
 // -------------------------------------------------------------
-// 1. ENDPOINT: TRANSAKSI BARU (SEWA / TITIP)
+// 1. TRANSAKSI BARU (SEWA / TITIP)
 // -------------------------------------------------------------
 app.post("/api/transaction", async (req, res) => {
   const { nama, email, bank, no_rek, type } = req.body;
-  const cleanEmail = email.trim().toLowerCase(); // Format email diseragamkan
+  const cleanEmail = email.trim().toLowerCase();
 
   try {
-    // Cek apakah user sudah ada, jika belum buat baru
+    const isSewa = type === "SEWA";
+    let targetSlotName = null;
+
+    if (isSewa) {
+      if (irState.ir1 === 1) targetSlotName = "SEWA_1";
+      else if (irState.ir2 === 1) targetSlotName = "SEWA_2";
+      else return res.status(400).json({ success: false, message: "Stok Payung Habis! (IR mendeteksi sewa kosong)" });
+    } else {
+      if (irState.ir4 === 0) targetSlotName = "TITIP_1";
+      else if (irState.ir5 === 0) targetSlotName = "TITIP_2";
+      else return res.status(400).json({ success: false, message: "Loker Titip Penuh! (IR mendeteksi titip terisi)" });
+    }
+
+    const { data: lockers } = await supabase.from("lockers").select("*").eq("slot_name", targetSlotName).limit(1);
+    if (!lockers || lockers.length === 0) {
+      return res.status(400).json({ success: false, message: `Loker '${targetSlotName}' tidak ditemukan!` });
+    }
+    const selectedLocker = lockers[0];
+
     let userId;
-    const { data: existingUsers } = await supabase
-      .from("users")
-      .select("id")
-      .ilike("email", cleanEmail)
-      .limit(1);
+    const { data: existingUsers } = await supabase.from("users").select("id").ilike("email", cleanEmail).limit(1);
 
     if (existingUsers && existingUsers.length > 0) {
       userId = existingUsers[0].id;
     } else {
       const { data: newUser, error: uErr } = await supabase
         .from("users")
-        .insert([
-          {
-            nama_lengkap: nama,
-            email: cleanEmail,
-            bank_wallet: bank,
-            nomor_rekening: no_rek,
-          },
-        ])
+        .insert([{ nama_lengkap: nama, email: cleanEmail, bank_wallet: bank, nomor_rekening: no_rek }])
         .select();
 
-      if (uErr)
-        return res.status(400).json({ success: false, message: uErr.message });
+      if (uErr) return res.status(400).json({ success: false, message: uErr.message });
       userId = newUser[0].id;
     }
-
-    const isSewa = type === "SEWA";
-
-    // Cari loker yang sesuai
-    const { data: lockers } = await supabase
-      .from("lockers")
-      .select("*")
-      .eq("category", type)
-      .eq("is_occupied", isSewa)
-      .order("position_order", { ascending: true });
-
-    if (!lockers || lockers.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: isSewa ? "Stok Payung Habis!" : "Loker Titip Penuh!",
-      });
-    }
-    const selectedLocker = lockers[0];
 
     const jamTenggat = isSewa ? 48 : 72;
     const waktuTenggat = new Date(Date.now() + jamTenggat * 60 * 60 * 1000);
     const biaya = isSewa ? 5000 : 3000;
     const deposit = isSewa ? 20000 : 3000;
 
-    // Insert Transaksi Baru
     const { error: tErr } = await supabase.from("transactions").insert([
       {
         user_id: userId,
@@ -112,22 +124,14 @@ app.post("/api/transaction", async (req, res) => {
       },
     ]);
 
-    if (tErr)
-      return res.status(400).json({ success: false, message: tErr.message });
+    if (tErr) return res.status(400).json({ success: false, message: tErr.message });
 
-    // Update Status Loker
-    await supabase
-      .from("lockers")
-      .update({ is_occupied: !isSewa, last_status_change: new Date() })
-      .eq("id", selectedLocker.id);
+    await supabase.from("lockers").update({ is_occupied: !isSewa, last_status_change: new Date() }).eq("id", selectedLocker.id);
 
     mqttClient.publish(topicCmd, `UNLOCK_${selectedLocker.slot_name}`);
-    console.log(`📡 Open Door: UNLOCK_${selectedLocker.slot_name}`);
+    console.log(`📡 Open Door Sent: UNLOCK_${selectedLocker.slot_name}`);
 
-    return res.json({
-      success: true,
-      message: `Pembayaran Berhasil! Membuka Pintu ${selectedLocker.slot_name}`,
-    });
+    return res.json({ success: true, message: `Pembayaran Berhasil! Membuka Pintu ${selectedLocker.slot_name}` });
   } catch (err) {
     console.error(err);
     res.status(500).json({ success: false, message: "Server error" });
@@ -135,34 +139,18 @@ app.post("/api/transaction", async (req, res) => {
 });
 
 // -------------------------------------------------------------
-// 2. ENDPOINT: REQUEST OTP
+// 2. REQUEST KODE OTP (EMAIL)
 // -------------------------------------------------------------
 app.post("/api/request-otp", async (req, res) => {
   const { email, type } = req.body;
-  if (!email)
-    return res
-      .status(400)
-      .json({ success: false, message: "Email tidak boleh kosong!" });
-
+  if (!email) return res.status(400).json({ success: false, message: "Email wajib diisi!" });
   const cleanEmail = email.trim().toLowerCase();
 
   try {
-    // 1. Cari semua ID user yang cocok dengan email ini
-    const { data: users } = await supabase
-      .from("users")
-      .select("id")
-      .ilike("email", cleanEmail);
-
-    if (!users || users.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: "Data Email tidak ditemukan dalam sistem!",
-      });
-    }
+    const { data: users } = await supabase.from("users").select("id").ilike("email", cleanEmail);
+    if (!users || users.length === 0) return res.status(404).json({ success: false, message: "Email tidak ditemukan!" });
 
     const userIds = users.map((u) => u.id);
-
-    // 2. Cari transaksi ACTIVE milik salah satu user_id tersebut
     const { data: trans } = await supabase
       .from("transactions")
       .select("*")
@@ -172,55 +160,29 @@ app.post("/api/request-otp", async (req, res) => {
       .order("id", { ascending: false })
       .limit(1);
 
-    if (!trans || trans.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: `Tidak ada transaksi ${type} aktif untuk email ini.`,
-      });
-    }
+    if (!trans || trans.length === 0) return res.status(400).json({ success: false, message: `Tidak ada transaksi ${type} yang aktif untuk email ini.` });
 
-    // 3. Generate Kode OTP
     const otp = generateOTP();
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
+    await supabase.from("otp_codes").insert([{ email: cleanEmail, otp_code: otp, expires_at: expiresAt.toISOString() }]);
 
-    await supabase.from("otp_codes").insert([
-      {
-        email: cleanEmail,
-        otp_code: otp,
-        expires_at: expiresAt.toISOString(),
-      },
-    ]);
-
-    console.log(
-      `📧 [EMAIL OTP] Kode OTP untuk ${cleanEmail} (${type}): ${otp}`,
-    );
-
-    return res.json({
-      success: true,
-      message: `Kode OTP verifikasi telah dikirim ke email. (Cek terminal backend untuk OTP!)`,
-    });
+    console.log(`📧 [EMAIL OTP] Kode OTP untuk ${cleanEmail} (${type}): ${otp}`);
+    return res.json({ success: true, message: `Kode OTP verifikasi terkirim!` });
   } catch (err) {
     console.error(err);
-    res
-      .status(500)
-      .json({ success: false, message: "Terjadi kesalahan server." });
+    res.status(500).json({ success: false, message: "Gagal meminta kode OTP." });
   }
 });
 
 // -------------------------------------------------------------
-// 3. ENDPOINT: VERIFIKASI OTP
+// 3. VERIFIKASI KODE OTP
 // -------------------------------------------------------------
 app.post("/api/verify-otp", async (req, res) => {
   const { email, otp, type } = req.body;
-  if (!email || !otp)
-    return res
-      .status(400)
-      .json({ success: false, message: "Email dan OTP wajib diisi!" });
-
+  if (!email || !otp) return res.status(400).json({ success: false, message: "Email dan OTP wajib diisi!" });
   const cleanEmail = email.trim().toLowerCase();
 
   try {
-    // 1. Validasi OTP
     const { data: validOtp } = await supabase
       .from("otp_codes")
       .select("*")
@@ -231,17 +193,11 @@ app.post("/api/verify-otp", async (req, res) => {
       .limit(1);
 
     if (!validOtp || validOtp.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: "Kode OTP Salah atau Sudah Kadaluwarsa!",
-      });
+      return res.status(400).json({ success: false, message: "Kode OTP Salah atau Kadaluwarsa!" });
     }
 
-    // 2. Cari transaksi aktif
-    const { data: users } = await supabase
-      .from("users")
-      .select("id")
-      .ilike("email", cleanEmail);
+    const { data: users } = await supabase.from("users").select("id").ilike("email", cleanEmail);
+    if (!users || users.length === 0) return res.status(404).json({ success: false, message: "Email tidak ditemukan!" });
     const userIds = users.map((u) => u.id);
 
     const { data: trans } = await supabase
@@ -253,79 +209,43 @@ app.post("/api/verify-otp", async (req, res) => {
       .order("id", { ascending: false })
       .limit(1);
 
-    if (!trans || trans.length === 0) {
-      return res
-        .status(400)
-        .json({ success: false, message: "Transaksi aktif tidak ditemukan." });
-    }
+    if (!trans || trans.length === 0) return res.status(400).json({ success: false, message: `Tidak ada transaksi ${type} aktif.` });
 
     const activeTrans = trans[0];
     const isSewa = type === "SEWA";
-
     let refundMessage = "";
     let depositKembali = activeTrans.deposit_jaminan;
-    let denda = 0;
 
-    // Hitung Keterlambatan khusus untuk SEWA
     if (isSewa) {
       const waktuTenggat = new Date(activeTrans.waktu_tenggat);
       const sekarang = new Date();
-
       if (sekarang > waktuTenggat) {
-        // Hitung berapa jam keterlambatan
-        const selisihJam = Math.ceil(
-          (sekarang - waktuTenggat) / (1000 * 60 * 60),
-        );
-
-        if (selisihJam <= 24) {
-          denda = 5000;
-        } else if (selisihJam <= 48) {
-          denda = 10000;
-        } else {
-          denda = activeTrans.deposit_jaminan; // Denda maksimal (20.000)
-        }
-
+        const selisihJam = Math.ceil((sekarang - waktuTenggat) / (1000 * 60 * 60));
+        const denda = selisihJam <= 24 ? 5000 : selisihJam <= 48 ? 10000 : activeTrans.deposit_jaminan;
         depositKembali = Math.max(0, activeTrans.deposit_jaminan - denda);
-
-        if (depositKembali > 0) {
-          refundMessage = `⚠️ Terlambat ${selisihJam} jam! Terkena denda Rp ${denda.toLocaleString("id-ID")}. Sisa deposit Rp ${depositKembali.toLocaleString("id-ID")} dikembalikan ke rekening/e-wallet Anda.`;
-        } else {
-          refundMessage = `❌ Terlambat melebihi batas maksimal! Uang deposit Rp ${activeTrans.deposit_jaminan.toLocaleString("id-ID")} HANGUS (tidak dikembalikan).`;
-        }
+        refundMessage = depositKembali > 0 ? `⚠️ Terlambat ${selisihJam} jam! Denda Rp ${denda.toLocaleString("id-ID")}.` : `❌ Deposit Hangus!`;
       } else {
-        refundMessage = `🎉 Pengembalian Tepat Waktu! Uang jaminan Rp ${depositKembali.toLocaleString("id-ID")} dikembalikan penuh ke rekening/e-wallet Anda.`;
+        refundMessage = `🎉 Pengembalian Tepat Waktu! Deposit Rp ${depositKembali.toLocaleString("id-ID")} dikembalikan.`;
       }
     } else {
-      // Untuk TITIP
-      refundMessage = `Payung titipan berhasil diambil! Terima kasih telah menggunakan PayungTeduh.`;
+      refundMessage = `Payung titipan berhasil diambil!`;
     }
 
-    // 3. Update status transaksi & loker di Supabase
-    await supabase
-      .from("transactions")
-      .update({ status_transaksi: "COMPLETED" })
-      .eq("id", activeTrans.id);
-    await supabase
-      .from("lockers")
-      .update({ is_occupied: isSewa, last_status_change: new Date() })
-      .eq("id", activeTrans.locker_id);
+    await supabase.from("transactions").update({ status_transaksi: "COMPLETED" }).eq("id", activeTrans.id);
+    await supabase.from("lockers").update({ is_occupied: isSewa, last_status_change: new Date() }).eq("id", activeTrans.locker_id);
 
-    // 4. Kirim sinyal MQTT ke ESP32
-    mqttClient.publish(topicCmd, `UNLOCK_${activeTrans.lockers.slot_name}`);
-    console.log(
-      `🔓 OTP Terverifikasi! Membuka Pintu ${activeTrans.lockers.slot_name}`,
-    );
+    const commandPayload = `UNLOCK_${activeTrans.lockers.slot_name}`;
+    mqttClient.publish(topicCmd, commandPayload);
+    console.log(`🔓 OTP Valid! Membuka Pintu ${commandPayload}`);
 
     return res.json({
       success: true,
-      message: `Verifikasi Berhasil! Pintu ${activeTrans.lockers.slot_name} Terbuka.`,
-      info_refund: refundMessage,
+      message: `Verifikasi Berhasil! Membuka Pintu ${activeTrans.lockers.slot_name}`,
+      info_refund: refundMessage
     });
   } catch (err) {
     console.error(err);
-    res
-      .status(500)
-      .json({ success: false, message: "Gagal memproses verifikasi." });
+    res.status(500).json({ success: false, message: "Gagal memproses verifikasi." });
   }
 });
 

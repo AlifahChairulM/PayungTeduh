@@ -1,22 +1,30 @@
 // Configuration API Endpoint Backend
-const API_URL = 'http://localhost:3000/api';
+const API_URL = 'http://10.200.16.118:3000/api';
 
-// -------------------------------------------------------------
-// 1. NAVIGASI TAB UI (Sewa/Titip, Kembalikan, Ambil)
-// -------------------------------------------------------------
+const eventSource = new EventSource(`${API_URL}/events`);
+eventSource.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+  if (data.type === 'RFID_SUCCESS') {
+    showStatus(`🎉 ${data.message}\n(UID Stiker: ${data.uid})`, true);
+    setTimeout(() => {
+      switchTab('new');
+      showStatus('Sistem Siap Digunakan Kembali.', true);
+    }, 4000);
+  } else if (data.type === 'RFID_FAILED') {
+    showStatus(data.message, false);
+  }
+};
+
 function switchTab(tab) {
-  // Sembunyikan semua form utama
   document.getElementById('form-new').classList.add('hidden');
   document.getElementById('form-return').classList.add('hidden');
   document.getElementById('form-retrieve').classList.add('hidden');
 
-  // Reset kelas CSS tab ke posisi non-aktif
   const inactiveClass = 'w-1/3 py-2 text-slate-500 hover:text-blue-600 transition-all';
   document.getElementById('tab-new').className = inactiveClass;
   document.getElementById('tab-return').className = inactiveClass;
   document.getElementById('tab-retrieve').className = inactiveClass;
 
-  // Aktifkan tab & tampilkan form yang dipilih
   const activeClass = 'w-1/3 py-2 border-b-2 border-blue-600 text-blue-600 transition-all';
   if (tab === 'new') {
     document.getElementById('form-new').classList.remove('hidden');
@@ -24,27 +32,23 @@ function switchTab(tab) {
   } else if (tab === 'return') {
     document.getElementById('form-return').classList.remove('hidden');
     document.getElementById('tab-return').className = activeClass;
-    resetReturnView(); // Reset tampilan sub-opsi pengembalian
+    resetReturnView();
   } else if (tab === 'retrieve') {
     document.getElementById('form-retrieve').classList.remove('hidden');
     document.getElementById('tab-retrieve').className = activeClass;
   }
 }
 
-// -------------------------------------------------------------
-// 2. KEMBALIKAN PAYUNG: SWITCH PILIHAN METODE (RFID vs EMAIL)
-// -------------------------------------------------------------
 function selectReturnMethod(method) {
   const optionsView = document.getElementById('return-options');
   const rfidView = document.getElementById('return-rfid-view');
   const emailView = document.getElementById('return-email-view');
 
   optionsView.classList.add('hidden');
-
   if (method === 'rfid') {
     rfidView.classList.remove('hidden');
     emailView.classList.add('hidden');
-    showStatus('Silakan periksa loker fisik. Tempelkan stiker RFID payung ke sensor pembaca.', true);
+    showStatus('Menunggu Scan Stiker RFID pada Alat Physical...', true);
   } else if (method === 'email') {
     emailView.classList.remove('hidden');
     rfidView.classList.add('hidden');
@@ -57,9 +61,6 @@ function resetReturnView() {
   document.getElementById('return-email-view').classList.add('hidden');
 }
 
-// -------------------------------------------------------------
-// 3. HELPER UI NOTIFIKASI STATUS
-// -------------------------------------------------------------
 function showStatus(msg, isSuccess) {
   const box = document.getElementById('status-box');
   box.classList.remove('hidden', 'bg-green-100', 'text-green-700', 'bg-red-100', 'text-red-700');
@@ -67,9 +68,6 @@ function showStatus(msg, isSuccess) {
   box.innerText = (isSuccess ? '✅ ' : '❌ ') + msg;
 }
 
-// -------------------------------------------------------------
-// 4. HANDLER TRANSAKSI BARU (SEWA / TITIP)
-// -------------------------------------------------------------
 async function handleNewTransaction(e) {
   e.preventDefault();
   const body = {
@@ -93,14 +91,18 @@ async function handleNewTransaction(e) {
   }
 }
 
-// -------------------------------------------------------------
-// 5. HANDLER REQUEST KODE OTP
-// -------------------------------------------------------------
-async function requestOTP(type, emailInputId) {
-  const email = document.getElementById(emailInputId).value;
-  if (!email) return showStatus('Silakan isi email terlebih dahulu!', false);
+// HANDLER REQUEST KODE OTP (Ambil / Kembali)
+async function requestOTP(e, type, emailInputId) {
+  if (e) e.preventDefault();
+  
+  const emailElem = document.getElementById(emailInputId);
+  if (!emailElem) return showStatus(`Input ID '${emailInputId}' tidak ditemukan.`, false);
+
+  const email = emailElem.value.trim();
+  if (!email) return showStatus('Silakan isi email terdaftar terlebih dahulu!', false);
 
   try {
+    showStatus('Meminta kode OTP ke server...', true);
     const res = await fetch(`${API_URL}/request-otp`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -109,19 +111,27 @@ async function requestOTP(type, emailInputId) {
     const data = await res.json();
     showStatus(data.message, data.success);
   } catch (err) {
+    console.error(err);
     showStatus('Gagal terhubung ke server backend.', false);
   }
 }
 
-// -------------------------------------------------------------
-// 6. HANDLER VERIFIKASI KODE OTP
-// -------------------------------------------------------------
-async function verifyOTP(type, emailInputId, otpInputId) {
-  const email = document.getElementById(emailInputId).value;
-  const otp = document.getElementById(otpInputId).value;
-  if (!otp) return showStatus('Silakan isi kode OTP!', false);
+// HANDLER VERIFIKASI KODE OTP (Ambil / Kembali)
+async function verifyOTP(e, type, emailInputId, otpInputId) {
+  if (e) e.preventDefault();
+  
+  const emailElem = document.getElementById(emailInputId);
+  const otpElem = document.getElementById(otpInputId);
+
+  if (!emailElem || !otpElem) return showStatus('Elemen input tidak ditemukan.', false);
+
+  const email = emailElem.value.trim();
+  const otp = otpElem.value.trim();
+  
+  if (!email || !otp) return showStatus('Silakan isi email dan kode OTP!', false);
 
   try {
+    showStatus('Memverifikasi OTP...', true);
     const res = await fetch(`${API_URL}/verify-otp`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -130,12 +140,18 @@ async function verifyOTP(type, emailInputId, otpInputId) {
     const data = await res.json();
     
     if (data.success) {
-      const fullMessage = `${data.message}\n\n${data.info_refund || ''}`;
+      const fullMessage = `${data.message}\n${data.info_refund || ''}`;
       showStatus(fullMessage, true);
+      
+      setTimeout(() => {
+        switchTab('new');
+        showStatus('Sistem Siap Digunakan Kembali.', true);
+      }, 4000);
     } else {
       showStatus(data.message, false);
     }
   } catch (err) {
+    console.error(err);
     showStatus('Gagal terhubung ke server backend.', false);
   }
 }
