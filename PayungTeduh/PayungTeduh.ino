@@ -9,16 +9,16 @@
 #include <QRCodeGFX.h>
 
 // --- KONFIGURASI WIFI & MQTT ---
-const char* ssid = "nyohh";         
-const char* password = "wkwkwkwk";
-const char* mqtt_server = "broker.hivemq.com";
+const char *ssid = "nyohh";
+const char *password = "wkwkwkwk";
+const char *mqtt_server = "broker.hivemq.com";
 const int mqtt_port = 1883;
 
 WiFiClient espClient;
 PubSubClient client(espClient);
 
-const char* topicCommand = "umbllocker/command"; 
-const char* topicStatus = "umbllocker/status";   
+const char *topicCommand = "umbllocker/command";
+const char *topicStatus = "umbllocker/status";
 
 // --- DEFINISI PIN ---
 #define OLED_SDA 21
@@ -28,7 +28,7 @@ const char* topicStatus = "umbllocker/status";
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 
 #define RST_PIN 4
-#define SS_PIN  5
+#define SS_PIN 5
 MFRC522 rfid(SS_PIN, RST_PIN);
 
 #define LIMIT_SW_1 32
@@ -57,12 +57,12 @@ const unsigned long TIMEOUT_PINTU = 60000;
 
 bool pintuSedangDitutup = false;
 unsigned long waktuTutup = 0;
-const unsigned long JEDA_KUNCI = 5000; 
+const unsigned long JEDA_KUNCI = 5000;
 
 // Track status IR sebelumnya untuk kirim update ke backend
 String lastIRStatus = "";
 
-void callback(char* topic, byte* payload, unsigned int length);
+void callback(char *topic, byte *payload, unsigned int length);
 void reconnectMQTT();
 void prosesBukaPintu(int slot);
 void tutupPintuOtomatis();
@@ -72,25 +72,30 @@ void tampilkanQRDinamis();
 void bunyikanBuzzer();
 void kirimStatusIR();
 
-void setup() {
+void setup()
+{
   Serial.begin(115200);
-  
+
   Wire.begin(OLED_SDA, OLED_SCL);
-  if(!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) { for(;;); }
+  if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C))
+  {
+    for (;;)
+      ;
+  }
   display.clearDisplay();
   display.setTextSize(1);
   display.setTextColor(WHITE);
-  
+
   SPI.begin();
   rfid.PCD_Init();
-  
+
   pinMode(BUTTON_PIN, INPUT_PULLUP);
   pinMode(BUZZER_PIN, OUTPUT);
   pinMode(LIMIT_SW_1, INPUT_PULLUP);
   pinMode(LIMIT_SW_2, INPUT_PULLUP);
   pinMode(LIMIT_SW_4, INPUT_PULLUP);
   pinMode(LIMIT_SW_5, INPUT_PULLUP);
-  
+
   pinMode(IR_1, INPUT);
   pinMode(IR_2, INPUT);
   pinMode(IR_4, INPUT);
@@ -100,28 +105,34 @@ void setup() {
   servo2.attach(SERVO_2_PIN);
   servo4.attach(SERVO_4_PIN);
   servo5.attach(SERVO_5_PIN);
-  servo1.write(0); servo2.write(0); servo4.write(0); servo5.write(0);
+  servo1.write(0);
+  servo2.write(0);
+  servo4.write(0);
+  servo5.write(0);
 
   display.clearDisplay();
   display.setCursor(0, 0);
   display.print("Menghubungkan WiFi...");
   display.display();
-  
+
   WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED) {
+  while (WiFi.status() != WL_CONNECTED)
+  {
     delay(500);
     Serial.print(".");
   }
-  
+
   Serial.println("\nWiFi Terhubung!");
   client.setServer(mqtt_server, mqtt_port);
   client.setCallback(callback);
-  
+
   tampilkanIdle();
 }
 
-void loop() {
-  if (!client.connected()) {
+void loop()
+{
+  if (!client.connected())
+  {
     reconnectMQTT();
   }
   client.loop();
@@ -130,54 +141,71 @@ void loop() {
   kirimStatusIR();
 
   // 1. Cek Tombol Push Button
-  if (digitalRead(BUTTON_PIN) == LOW) {
+  if (digitalRead(BUTTON_PIN) == LOW)
+  {
     delay(50);
-    if (digitalRead(BUTTON_PIN) == LOW) {
+    if (digitalRead(BUTTON_PIN) == LOW)
+    {
       bunyikanBuzzer();
       tampilkanQRDinamis();
       client.publish(topicStatus, "SESSION_START");
-      while(digitalRead(BUTTON_PIN) == LOW);
+      while (digitalRead(BUTTON_PIN) == LOW)
+        ;
     }
   }
 
   // 2. Timer Pintu Terbuka
-  if (pintuTerbuka) {
+  if (pintuTerbuka)
+  {
     unsigned long sisaWaktu = TIMEOUT_PINTU - (millis() - waktuBuka);
-    if (sisaWaktu > 0) {
+    if (sisaWaktu > 0)
+    {
       display.clearDisplay();
-      display.setCursor(0,0);
+      display.setCursor(0, 0);
       display.print("Pintu Terbuka...");
-      display.setCursor(0,20);
-      display.print("Waktu: "); display.print(sisaWaktu / 1000); display.print("s");
+      display.setCursor(0, 20);
+      display.print("Waktu: ");
+      display.print(sisaWaktu / 1000);
+      display.print("s");
       display.display();
-    } else {
+    }
+    else
+    {
       tutupPintuOtomatis();
     }
   }
 
   // 3. Logika Limit Switch & Jeda 5 Detik
-  if (pintuTerbuka) {
+  if (pintuTerbuka)
+  {
     bool sensorTertutup = false;
-    if (slotAktif == 1 && digitalRead(LIMIT_SW_1) == LOW) sensorTertutup = true;
-    if (slotAktif == 2 && digitalRead(LIMIT_SW_2) == LOW) sensorTertutup = true;
-    if (slotAktif == 4 && digitalRead(LIMIT_SW_4) == LOW) sensorTertutup = true;
-    if (slotAktif == 5 && digitalRead(LIMIT_SW_5) == LOW) sensorTertutup = true;
+    if (slotAktif == 1 && digitalRead(LIMIT_SW_1) == LOW)
+      sensorTertutup = true;
+    if (slotAktif == 2 && digitalRead(LIMIT_SW_2) == LOW)
+      sensorTertutup = true;
+    if (slotAktif == 4 && digitalRead(LIMIT_SW_4) == LOW)
+      sensorTertutup = true;
+    if (slotAktif == 5 && digitalRead(LIMIT_SW_5) == LOW)
+      sensorTertutup = true;
 
-    if (sensorTertutup && !pintuSedangDitutup) {
+    if (sensorTertutup && !pintuSedangDitutup)
+    {
       pintuSedangDitutup = true;
       waktuTutup = millis();
       display.clearDisplay();
-      display.setCursor(0,0);
+      display.setCursor(0, 0);
       display.print("Pintu Tertutup.");
-      display.setCursor(0,20);
+      display.setCursor(0, 20);
       display.print("Mengunci dalam 5s...");
       display.display();
     }
   }
 
   // 4. Eksekusi Kunci
-  if (pintuSedangDitutup) {
-    if (millis() - waktuTutup >= JEDA_KUNCI) {
+  if (pintuSedangDitutup)
+  {
+    if (millis() - waktuTutup >= JEDA_KUNCI)
+    {
       kunciPintu(slotAktif);
       pintuTerbuka = false;
       pintuSedangDitutup = false;
@@ -187,16 +215,21 @@ void loop() {
   }
 
   // 5. Cek RFID Validasi
-  if (rfid.PICC_IsNewCardPresent() && rfid.PICC_ReadCardSerial()) {
+  if (rfid.PICC_IsNewCardPresent() && rfid.PICC_ReadCardSerial())
+  {
     String uid = "";
-    for (byte i = 0; i < rfid.uid.size; i++) {
-      if (rfid.uid.uidByte[i] < 0x10) uid += "0";
+    for (byte i = 0; i < rfid.uid.size; i++)
+    {
+      if (rfid.uid.uidByte[i] < 0x10)
+        uid += "0";
       uid += String(rfid.uid.uidByte[i], HEX);
-      if (i < rfid.uid.size - 1) uid += " ";
+      if (i < rfid.uid.size - 1)
+        uid += " ";
     }
     uid.toUpperCase();
 
-    if (uid == "61 F7 28 B5" || uid == "51 B0 25 B5") {
+    if (uid == "61 F7 28 B5" || uid == "51 B0 25 B5")
+    {
       bunyikanBuzzer();
       display.clearDisplay();
       display.setCursor(0, 0);
@@ -210,28 +243,39 @@ void loop() {
 
       // Pilih slot sewa (1 atau 2) yang terisi payung (LOW), utamakan slot 1 (ujung)
       int targetSlot = 0;
-      if (digitalRead(IR_1) == LOW) {
+      if (digitalRead(IR_1) == LOW)
+      {
         targetSlot = 1;
-      } else if (digitalRead(IR_2) == LOW) {
+      }
+      else if (digitalRead(IR_2) == LOW)
+      {
         targetSlot = 2;
       }
 
-      if (targetSlot > 0) {
+      if (targetSlot > 0)
+      {
         prosesBukaPintu(targetSlot);
-      } else {
+      }
+      else
+      {
         display.clearDisplay();
-        display.setCursor(0,0);
+        display.setCursor(0, 0);
         display.print("Gagal!");
-        display.setCursor(0,20);
+        display.setCursor(0, 20);
         display.print("Tidak Ada Payung");
         display.display();
         delay(2000);
         tampilkanIdle();
       }
-    } else {
-      for (int i = 0; i < 3; i++) {
-        digitalWrite(BUZZER_PIN, HIGH); delay(100);
-        digitalWrite(BUZZER_PIN, LOW); delay(100);
+    }
+    else
+    {
+      for (int i = 0; i < 3; i++)
+      {
+        digitalWrite(BUZZER_PIN, HIGH);
+        delay(100);
+        digitalWrite(BUZZER_PIN, LOW);
+        delay(100);
       }
       display.clearDisplay();
       display.setCursor(0, 0);
@@ -246,7 +290,7 @@ void loop() {
       delay(3000);
       tampilkanIdle();
     }
-    
+
     rfid.PICC_HaltA();
     rfid.PCD_StopCrypto1();
     delay(1000);
@@ -254,11 +298,13 @@ void loop() {
 }
 
 // Kirim status IR ke Backend (Format: IR_STATE:IR1,IR2,IR4,IR5)
-void kirimStatusIR() {
+void kirimStatusIR()
+{
   static unsigned long lastCheck = 0;
-  if (millis() - lastCheck > 2000) { // Cek tiap 2 detik
+  if (millis() - lastCheck > 2000)
+  { // Cek tiap 2 detik
     lastCheck = millis();
-    
+
     // Low = Ada Payung (1), High = Kosong (0)
     int ir1 = (digitalRead(IR_1) == LOW) ? 1 : 0;
     int ir2 = (digitalRead(IR_2) == LOW) ? 1 : 0;
@@ -266,7 +312,8 @@ void kirimStatusIR() {
     int ir5 = (digitalRead(IR_5) == LOW) ? 1 : 0;
 
     String currentIR = "IR_STATE:" + String(ir1) + "," + String(ir2) + "," + String(ir4) + "," + String(ir5);
-    if (currentIR != lastIRStatus) {
+    if (currentIR != lastIRStatus)
+    {
       lastIRStatus = currentIR;
       client.publish(topicStatus, currentIR.c_str());
       Serial.println("Update IR: " + currentIR);
@@ -274,70 +321,112 @@ void kirimStatusIR() {
   }
 }
 
-void callback(char* topic, byte* payload, unsigned int length) {
+void callback(char *topic, byte *payload, unsigned int length)
+{
   String pesan = "";
-  for (int i = 0; i < length; i++) {
+  for (int i = 0; i < length; i++)
+  {
     pesan += (char)payload[i];
   }
   Serial.println("Pesan MQTT Diterima: " + pesan);
 
-  if (pesan == "UNLOCK_SEWA_1") {
+  if (pesan == "UNLOCK_SEWA_1")
+  {
     prosesBukaPintu(1);
-  } else if (pesan == "UNLOCK_SEWA_2") {
+  }
+  else if (pesan == "UNLOCK_SEWA_2")
+  {
     prosesBukaPintu(2);
-  } else if (pesan == "UNLOCK_TITIP_1") {
+  }
+  else if (pesan == "UNLOCK_TITIP_1")
+  {
     prosesBukaPintu(4);
-  } else if (pesan == "UNLOCK_TITIP_2") {
+  }
+  else if (pesan == "UNLOCK_TITIP_2")
+  {
     prosesBukaPintu(5);
   }
 }
 
-void reconnectMQTT() {
-  while (!client.connected()) {
+void reconnectMQTT()
+{
+  while (!client.connected())
+  {
     String clientId = "ESP32PayungTeduh-";
     clientId += String(random(0xffff), HEX);
-    if (client.connect(clientId.c_str())) {
+    if (client.connect(clientId.c_str()))
+    {
       client.subscribe(topicCommand);
       kirimStatusIR(); // Langsung laporkan status IR saat terhubung
-    } else {
+    }
+    else
+    {
       delay(5000);
     }
   }
 }
 
-void prosesBukaPintu(int slot) {
+void prosesBukaPintu(int slot)
+{
   bool kondisiFisikOK = false;
-  
+
   // Validasi Sensor IR secara ketat
-  if (slot == 1 || slot == 2) {
+  if (slot == 1 || slot == 2)
+  {
     // Sewa: Loker harus berisi payung (LOW)
-    if (slot == 1 && digitalRead(IR_1) == LOW) kondisiFisikOK = true;
-    if (slot == 2 && digitalRead(IR_2) == LOW) kondisiFisikOK = true;
-  } else if (slot == 4 || slot == 5) {
+    if (slot == 1 && digitalRead(IR_1) == LOW)
+      kondisiFisikOK = true;
+    if (slot == 2 && digitalRead(IR_2) == LOW)
+      kondisiFisikOK = true;
+  }
+  else if (slot == 4 || slot == 5)
+  {
     // Titip: Loker harus kosong (HIGH)
-    if (slot == 4 && digitalRead(IR_4) == HIGH) kondisiFisikOK = true;
-    if (slot == 5 && digitalRead(IR_5) == HIGH) kondisiFisikOK = true;
+    if (slot == 4 && digitalRead(IR_4) == HIGH)
+      kondisiFisikOK = true;
+    if (slot == 5 && digitalRead(IR_5) == HIGH)
+      kondisiFisikOK = true;
   }
 
-  if (kondisiFisikOK) {
-    if (slot == 1) servo1.write(90);
-    if (slot == 2) servo2.write(90);
-    if (slot == 4) servo4.write(90);
-    if (slot == 5) servo5.write(90);
-
+  if (kondisiFisikOK)
+  {
     slotAktif = slot;
+
+    // Gerakkan Servo ke 90 derajat (Posisi Membuka)
+    if (slot == 1)
+    {
+      servo1.write(90);
+    }
+    if (slot == 2)
+    {
+      servo2.write(90);
+    }
+    if (slot == 4)
+    {
+      servo4.write(90);
+    }
+    if (slot == 5)
+    {
+      servo5.write(90);
+    }
+
+    // Beri jeda 500ms agar servo selesai bergerak penuh ke sudut 90 derajat
+    delay(500);
+
     pintuTerbuka = true;
-    pintuSedangDitutup = false; 
+    pintuSedangDitutup = false;
     waktuBuka = millis();
-    
+
     bunyikanBuzzer();
     Serial.println("Pintu Berhasil Dibuka untuk Slot: " + String(slot));
-  } else {
+  }
+  else
+  {
     display.clearDisplay();
-    display.setCursor(0,0);
+    display.setCursor(0, 0);
     display.print("Gagal Buka Slot ");
     display.print(slot);
-    display.setCursor(0,20);
+    display.setCursor(0, 20);
     display.print("Sensor IR Tidak OK");
     display.display();
     delay(2000);
@@ -346,7 +435,8 @@ void prosesBukaPintu(int slot) {
   }
 }
 
-void tutupPintuOtomatis() {
+void tutupPintuOtomatis()
+{
   kunciPintu(slotAktif);
   pintuTerbuka = false;
   pintuSedangDitutup = false;
@@ -354,14 +444,23 @@ void tutupPintuOtomatis() {
   client.publish(topicStatus, "DOOR_TIMEOUT");
 }
 
-void kunciPintu(int slot) {
-  if (slot == 1) servo1.write(0);
-  if (slot == 2) servo2.write(0);
-  if (slot == 4) servo4.write(0);
-  if (slot == 5) servo5.write(0);
+void kunciPintu(int slot)
+{
+  if (slot == 1)
+    servo1.write(0);
+  if (slot == 2)
+    servo2.write(0);
+  if (slot == 4)
+    servo4.write(0);
+  if (slot == 5)
+    servo5.write(0);
+
+  delay(500);
+  Serial.println("Loker Slot " + String(slot) + " Berhasil Dikunci Kembali ke 0 derajat.");
 }
 
-void tampilkanIdle() {
+void tampilkanIdle()
+{
   display.clearDisplay();
   display.ssd1306_command(SSD1306_SETCONTRAST);
   display.ssd1306_command(0xCF);
@@ -376,18 +475,20 @@ void tampilkanIdle() {
   display.display();
 }
 
-void tampilkanQRDinamis() {
+void tampilkanQRDinamis()
+{
   display.clearDisplay();
   display.ssd1306_command(SSD1306_SETCONTRAST);
   display.ssd1306_command(0x05);
   QRCodeGFX qrcode(display);
-  String qrData = "http://10.200.16.118:3000/?session=" + String(millis());
-  qrcode.setScale(2); 
+  String qrData = "http://10.56.58.1:3000/?session=" + String(millis());
+  qrcode.setScale(2);
   qrcode.draw(qrData.c_str(), 10, 1);
   display.display();
 }
 
-void bunyikanBuzzer() {
+void bunyikanBuzzer()
+{
   digitalWrite(BUZZER_PIN, HIGH);
   delay(200);
   digitalWrite(BUZZER_PIN, LOW);

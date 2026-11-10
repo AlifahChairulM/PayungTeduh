@@ -1,5 +1,5 @@
 // Configuration API Endpoint Backend
-const API_URL = 'http://10.200.16.118:3000/api';
+const API_URL = 'http://10.56.58.1:3000/api';
 
 const eventSource = new EventSource(`${API_URL}/events`);
 eventSource.onmessage = (event) => {
