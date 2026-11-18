@@ -8,8 +8,8 @@
 #include <MFRC522.h>
 
 // --- KONFIGURASI WIFI & MQTT ---
-const char *ssid = "Garnish";
-const char *password = "belcogemoy";
+const char *ssid = "UPNYK-Mahasiswa";
+const char *password = "mhs2021*#";
 const char *mqtt_server = "broker.hivemq.com";
 const int mqtt_port = 1883;
 
@@ -65,7 +65,7 @@ int slotAktif = 0;
 String namaSlotAktif = "";
 String aksiAktif = ""; // "SEWA", "TITIP", "RETURN", "RETRIEVE"
 unsigned long waktuBuka = 0;
-const unsigned long TIMEOUT_PINTU = 30000;
+const unsigned long TIMEOUT_PINTU = 60000;
 
 bool pintuSedangDitutup = false;
 unsigned long waktuTutup = 0;

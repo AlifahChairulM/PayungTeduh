@@ -50,13 +50,14 @@ function enterAsUser() {
   document.getElementById('main-app-content').classList.remove('hidden');
   document.getElementById('status-box').classList.add('hidden');
   updatePricePreview();
-  loadAvailability();
+  notifyOled('PILIH_SEWA');
 }
 
 function backToRoleSelect() {
   document.getElementById('main-app-content').classList.add('hidden');
   document.getElementById('role-select-screen').classList.remove('hidden');
   document.getElementById('status-box').classList.add('hidden');
+  loadAvailability();
 }
 
 function showAdminLoginBox() {
@@ -151,6 +152,12 @@ function updatePricePreview() {
 document.addEventListener('DOMContentLoaded', () => {
   updatePricePreview();
   loadAvailability();
+  setInterval(() => {
+    const roleScreen = document.getElementById('role-select-screen');
+    if (roleScreen && !roleScreen.classList.contains('hidden')) {
+      loadAvailability();
+    }
+  }, 2500);
 });
 
 const eventSource = new EventSource(`${API_URL}/events`);

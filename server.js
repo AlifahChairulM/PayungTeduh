@@ -20,12 +20,42 @@ const topicStatus = "umbllocker/status";
 
 let sseClients = [];
 let irState = { ir1: 1, ir2: 1, ir4: 0, ir5: 0 };
+let irConnected = false;
 
 let activeNfcSession = {
   unlocked: false,
   uid: null,
   expiresAt: 0,
 };
+
+async function calculateLiveAvailability() {
+  const irSewa = (irState.ir1 === 1 ? 1 : 0) + (irState.ir2 === 1 ? 1 : 0);
+  const irTitip = (irState.ir4 === 0 ? 1 : 0) + (irState.ir5 === 0 ? 1 : 0);
+
+  try {
+    const { data: activeTx } = await supabase
+      .from("transactions")
+      .select("type")
+      .eq("status_transaksi", "ACTIVE");
+
+    const activeSewaCount = (activeTx || []).filter(
+      (t) => t.type === "SEWA",
+    ).length;
+    const activeTitipCount = (activeTx || []).filter(
+      (t) => t.type === "TITIP",
+    ).length;
+
+    const dbSewa = Math.max(0, 2 - activeSewaCount);
+    const dbTitip = Math.max(0, 2 - activeTitipCount);
+
+    const sewaTersedia = irConnected ? Math.min(irSewa, dbSewa) : dbSewa;
+    const titipKosong = irConnected ? Math.min(irTitip, dbTitip) : dbTitip;
+
+    return { sewaTersedia, titipKosong, irConnected };
+  } catch (err) {
+    return { sewaTersedia: irSewa, titipKosong: irTitip, irConnected };
+  }
+}
 
 mqttClient.on("connect", () => {
   console.log("✅ Connected to HiveMQ Broker!");
@@ -42,16 +72,12 @@ mqttClient.on("message", async (topic, message) => {
     irState.ir2 = parts[1];
     irState.ir4 = parts[2];
     irState.ir5 = parts[3];
+    irConnected = true;
 
-    const sewaTersedia =
-      (irState.ir1 === 1 ? 1 : 0) + (irState.ir2 === 1 ? 1 : 0);
-    const titipKosong =
-      (irState.ir4 === 0 ? 1 : 0) + (irState.ir5 === 0 ? 1 : 0);
-
+    const live = await calculateLiveAvailability();
     broadcastSSE({
       type: "IR_UPDATE",
-      sewaTersedia,
-      titipKosong,
+      ...live,
     });
   } else if (msg === "SYSTEM_ACTIVATED") {
     broadcastSSE({
@@ -72,7 +98,6 @@ mqttClient.on("message", async (topic, message) => {
     });
   } else if (msg.startsWith("RFID_VALID:")) {
     const uid = msg.split(":")[1];
-    // Sinkronkan transaksi SEWA aktif terbaru menjadi COMPLETED agar OTP tidak bisa diminta ulang
     try {
       const { data: activeSewa } = await supabase
         .from("transactions")
@@ -86,7 +111,10 @@ mqttClient.on("message", async (topic, message) => {
         const tx = activeSewa[0];
         await supabase
           .from("transactions")
-          .update({ status_transaksi: "COMPLETED" })
+          .update({
+            status_transaksi: "COMPLETED",
+            waktu_kembali: new Date().toISOString(),
+          })
           .eq("id", tx.id);
         await supabase
           .from("lockers")
@@ -100,6 +128,9 @@ mqttClient.on("message", async (topic, message) => {
     } catch (err) {
       console.error("Gagal update transaksi saat RFID_VALID:", err.message);
     }
+
+    const live = await calculateLiveAvailability();
+    broadcastSSE({ type: "IR_UPDATE", ...live });
 
     broadcastSSE({
       type: "RFID_SUCCESS",
@@ -134,15 +165,11 @@ app.get("/api/session-status", (req, res) => {
   res.json({ unlocked: isValid, expiresAt: activeNfcSession.expiresAt });
 });
 
-app.get("/api/availability", (req, res) => {
-  const sewaTersedia =
-    (irState.ir1 === 1 ? 1 : 0) + (irState.ir2 === 1 ? 1 : 0);
-  const titipKosong = (irState.ir4 === 0 ? 1 : 0) + (irState.ir5 === 0 ? 1 : 0);
-
+app.get("/api/availability", async (req, res) => {
+  const live = await calculateLiveAvailability();
   res.json({
     success: true,
-    sewaTersedia,
-    titipKosong,
+    ...live,
   });
 });
 
@@ -165,7 +192,7 @@ function broadcastSSE(data) {
   );
 }
 
-app.get("/api/events", (req, res) => {
+app.get("/api/events", async (req, res) => {
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
@@ -173,6 +200,9 @@ app.get("/api/events", (req, res) => {
   const clientId = Date.now();
   const newClient = { id: clientId, res };
   sseClients.push(newClient);
+
+  const live = await calculateLiveAvailability();
+  res.write(`data: ${JSON.stringify({ type: "IR_UPDATE", ...live })}\n\n`);
 
   req.on("close", () => {
     sseClients = sseClients.filter((c) => c.id !== clientId);
@@ -299,6 +329,9 @@ app.post("/api/transaction", async (req, res) => {
       `📡 Open Door Sent: ${commandPayload} | Total Potong: Rp ${totalBayar} (${bank})`,
     );
 
+    const live = await calculateLiveAvailability();
+    broadcastSSE({ type: "IR_UPDATE", ...live });
+
     return res.json({
       success: true,
       message: `Pembayaran Berhasil! Membuka Pintu ${selectedLocker.slot_name}`,
@@ -362,8 +395,6 @@ app.post("/api/request-otp", async (req, res) => {
     }
 
     const activeUserId = trans[0].user_id;
-
-    // Hapus OTP lama milik user ini agar hanya 1 OTP terbaru yang berlaku
     await supabase.from("otp_codes").delete().in("user_id", userIds);
 
     const otp = generateOTP();
@@ -453,7 +484,6 @@ app.post("/api/verify-otp", async (req, res) => {
       .limit(1);
 
     if (!trans || trans.length === 0) {
-      // Hapus OTP sisa jika transaksi ternyata sudah tidak aktif
       await supabase.from("otp_codes").delete().in("user_id", userIds);
       return res
         .status(400)
@@ -501,26 +531,28 @@ app.post("/api/verify-otp", async (req, res) => {
       refundMessage = `Payung titipan berhasil diambil!`;
     }
 
-    // 1. Tandai transaksi COMPLETED & update loker
     await supabase
       .from("transactions")
-      .update({ status_transaksi: "COMPLETED" })
+      .update({
+        status_transaksi: "COMPLETED",
+        waktu_kembali: new Date().toISOString(),
+      })
       .eq("id", activeTrans.id);
     await supabase
       .from("lockers")
       .update({ is_occupied: isSewa, last_status_change: new Date() })
       .eq("id", activeTrans.locker_id);
-
-    // 2. HAPUS KODE OTP AGAR TIDAK BISA DIPAKAI ULANG!
     await supabase.from("otp_codes").delete().in("user_id", userIds);
 
-    // 3. Kirim perintah buka pintu ke ESP32
     const actionMode = type === "SEWA" ? "RETURN" : "RETRIEVE";
     const commandPayload = `UNLOCK:${slotName}:${actionMode}`;
     mqttClient.publish(topicCmd, commandPayload);
     console.log(
       `🔓 OTP Valid (Hangus Terpakai)! Membuka Pintu ${commandPayload}`,
     );
+
+    const live = await calculateLiveAvailability();
+    broadcastSSE({ type: "IR_UPDATE", ...live });
 
     return res.json({
       success: true,
@@ -536,17 +568,22 @@ app.post("/api/verify-otp", async (req, res) => {
 });
 
 // -------------------------------------------------------------
-// 4. ENDPOINT ADMIN DASHBOARD (TERPROTEKSI PASSWORD)
+// 4. ENDPOINT ADMIN DASHBOARD & CRUD (UPDATE + DELETE)
 // -------------------------------------------------------------
-app.get("/api/admin/dashboard", async (req, res) => {
+function verifyAdmin(req, res) {
   const adminPass = req.headers["x-admin-password"];
   const validPass = process.env.ADMIN_PASSWORD || "infonekak";
-
   if (!adminPass || adminPass !== validPass) {
-    return res
-      .status(401)
-      .json({ success: false, message: "Password Admin Salah!" });
+    res.status(401).json({ success: false, message: "Password Admin Salah!" });
+    return false;
   }
+  return true;
+}
+
+// READ: Ambil semua data dashboard
+app.get("/api/admin/dashboard", async (req, res) => {
+  if (!verifyAdmin(req, res)) return;
+
   try {
     const [lockersRes, usersRes, transRes] = await Promise.all([
       supabase.from("lockers").select("*").order("id", { ascending: true }),
@@ -598,6 +635,198 @@ app.get("/api/admin/dashboard", async (req, res) => {
       .status(500)
       .json({ success: false, message: "Gagal memuat data dashboard admin." });
   }
+});
+
+// UPDATE: Edit data transaksi/user ATAU selesaikan paksa transaksi aktif
+app.put("/api/admin/transactions/:id", async (req, res) => {
+  if (!verifyAdmin(req, res)) return;
+
+  const txId = req.params.id;
+  const { action, nama_lengkap, email, bank_wallet, nomor_rekening, waktu_tenggat, status_transaksi } = req.body;
+
+  try {
+    const { data: txList, error: fetchErr } = await supabase
+      .from("transactions")
+      .select("*")
+      .eq("id", txId)
+      .limit(1);
+
+    if (fetchErr) {
+      return res.status(400).json({ success: false, message: fetchErr.message });
+    }
+    if (!txList || txList.length === 0) {
+      return res.status(404).json({ success: false, message: "Transaksi tidak ditemukan." });
+    }
+    const tx = txList[0];
+
+    // Mode 1: Selesaikan paksa transaksi aktif
+    if (action === "COMPLETE") {
+      const isSewa = tx.type === "SEWA";
+      const { data: updatedTx, error: updErr } = await supabase
+        .from("transactions")
+        .update({
+          status_transaksi: "COMPLETED",
+          waktu_kembali: new Date().toISOString(),
+        })
+        .eq("id", txId)
+        .select();
+
+      if (updErr) {
+        return res.status(400).json({ success: false, message: updErr.message });
+      }
+      if (!updatedTx || updatedTx.length === 0) {
+        return res.status(403).json({
+          success: false,
+          message: "Update diblokir Supabase RLS! Jalankan DISABLE ROW LEVEL SECURITY di SQL Editor.",
+        });
+      }
+
+      await supabase
+        .from("lockers")
+        .update({ is_occupied: isSewa, last_status_change: new Date() })
+        .eq("id", tx.locker_id);
+
+      await supabase.from("otp_codes").delete().eq("user_id", tx.user_id);
+
+      const live = await calculateLiveAvailability();
+      broadcastSSE({ type: "IR_UPDATE", ...live });
+
+      return res.json({ success: true, message: `Transaksi #${txId} berhasil diselesaikan.` });
+    }
+
+    // Mode 2: Update data pengguna & detail transaksi dari modal edit
+    if (tx.user_id && (nama_lengkap !== undefined || email !== undefined || bank_wallet !== undefined || nomor_rekening !== undefined)) {
+      const userUpdates = {};
+      if (nama_lengkap !== undefined) userUpdates.nama_lengkap = nama_lengkap.trim();
+      if (email !== undefined) userUpdates.email = email.trim().toLowerCase();
+      if (bank_wallet !== undefined) userUpdates.bank_wallet = bank_wallet.trim();
+      if (nomor_rekening !== undefined) userUpdates.nomor_rekening = nomor_rekening.trim();
+
+      const { data: updatedUser, error: userErr } = await supabase
+        .from("users")
+        .update(userUpdates)
+        .eq("id", tx.user_id)
+        .select();
+
+      if (userErr) {
+        return res.status(400).json({ success: false, message: userErr.message });
+      }
+      if (!updatedUser || updatedUser.length === 0) {
+        return res.status(403).json({
+          success: false,
+          message: "Update user diblokir Supabase RLS! Jalankan DISABLE ROW LEVEL SECURITY di SQL Editor.",
+        });
+      }
+    }
+
+    const txUpdates = {};
+    if (waktu_tenggat) {
+      const parsedDate = new Date(waktu_tenggat);
+      if (!isNaN(parsedDate.getTime())) {
+        txUpdates.waktu_tenggat = parsedDate.toISOString();
+      }
+    }
+    if (status_transaksi && status_transaksi !== tx.status_transaksi) {
+      txUpdates.status_transaksi = status_transaksi;
+      if (status_transaksi === "COMPLETED" && !tx.waktu_kembali) {
+        txUpdates.waktu_kembali = new Date().toISOString();
+      }
+    }
+
+    if (Object.keys(txUpdates).length > 0) {
+      const { data: updatedTx, error: txErr } = await supabase
+        .from("transactions")
+        .update(txUpdates)
+        .eq("id", txId)
+        .select();
+
+      if (txErr) {
+        return res.status(400).json({ success: false, message: txErr.message });
+      }
+      if (!updatedTx || updatedTx.length === 0) {
+        return res.status(403).json({
+          success: false,
+          message: "Update transaksi diblokir Supabase RLS! Jalankan DISABLE ROW LEVEL SECURITY di SQL Editor.",
+        });
+      }
+    }
+
+    const live = await calculateLiveAvailability();
+    broadcastSSE({ type: "IR_UPDATE", ...live });
+
+    return res.json({ success: true, message: `Data transaksi #${txId} berhasil diperbarui.` });
+  } catch (err) {
+    console.error("Admin Update Error:", err);
+    res.status(500).json({ success: false, message: "Gagal memperbarui data transaksi: " + err.message });
+  }
+});
+
+// DELETE: Hapus transaksi dari database
+app.delete("/api/admin/transactions/:id", async (req, res) => {
+  if (!verifyAdmin(req, res)) return;
+
+  const txId = req.params.id;
+
+  try {
+    const { data: txList, error: fetchErr } = await supabase
+      .from("transactions")
+      .select("*")
+      .eq("id", txId)
+      .limit(1);
+
+    if (fetchErr) {
+      return res.status(400).json({ success: false, message: fetchErr.message });
+    }
+    if (!txList || txList.length === 0) {
+      return res.status(404).json({ success: false, message: "Transaksi tidak ditemukan." });
+    }
+    const tx = txList[0];
+
+    if (tx.status_transaksi === "ACTIVE") {
+      const isSewa = tx.type === "SEWA";
+      await supabase
+        .from("lockers")
+        .update({ is_occupied: isSewa, last_status_change: new Date() })
+        .eq("id", tx.locker_id);
+      await supabase.from("otp_codes").delete().eq("user_id", tx.user_id);
+    }
+
+    const { data: deletedRows, error: delErr } = await supabase
+      .from("transactions")
+      .delete()
+      .eq("id", txId)
+      .select();
+
+    if (delErr) {
+      return res.status(400).json({ success: false, message: delErr.message });
+    }
+    if (!deletedRows || deletedRows.length === 0) {
+      return res.status(403).json({
+        success: false,
+        message: "Hapus diblokir Supabase RLS! Jalankan DISABLE ROW LEVEL SECURITY di SQL Editor.",
+      });
+    }
+
+    const live = await calculateLiveAvailability();
+    broadcastSSE({ type: "IR_UPDATE", ...live });
+
+    return res.json({ success: true, message: `Transaksi #${txId} berhasil dihapus.` });
+  } catch (err) {
+    console.error("Admin Delete Error:", err);
+    res.status(500).json({ success: false, message: "Gagal menghapus transaksi: " + err.message });
+  }
+});
+
+// ACTION ADMIN: Buka pintu loker darurat via MQTT
+app.post("/api/admin/lockers/:slot_name/unlock", async (req, res) => {
+  if (!verifyAdmin(req, res)) return;
+
+  const slotName = req.params.slot_name;
+  const commandPayload = `UNLOCK:${slotName}:ADMIN`;
+  mqttClient.publish(topicCmd, commandPayload);
+  console.log(`🔓 Admin Emergency Unlock Sent: ${commandPayload}`);
+
+  return res.json({ success: true, message: `Perintah buka pintu dikirim ke ${slotName}.` });
 });
 
 const PORT = process.env.PORT || 3000;

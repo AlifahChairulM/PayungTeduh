@@ -36,7 +36,7 @@
   </div>
 
   <!-- KONTEN UTAMA DASHBOARD ADMIN -->
-  <div id="admin-dashboard-content" class="max-w-5xl mx-auto space-y-6 hidden">
+  <div id="admin-dashboard-content" class="max-w-6xl mx-auto space-y-6 hidden">
     
     <!-- HEADER ADMIN -->
     <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -45,7 +45,7 @@
           <h1 class="text-2xl font-bold text-slate-800">🛡️ POV Admin - PayungTeduh</h1>
           <span class="text-xs font-bold bg-emerald-100 text-emerald-700 px-2.5 py-0.5 rounded-full">Live Monitor</span>
         </div>
-        <p class="text-slate-500 text-sm mt-1">Pantau ketersediaan loker fisik, penyewa aktif, dan riwayat transaksi.</p>
+        <p class="text-slate-500 text-sm mt-1">Pantau ketersediaan loker fisik, kelola penyewa aktif, dan riwayat transaksi.</p>
       </div>
       <div class="flex flex-wrap items-center gap-2">
         <button onclick="loadDashboard()" class="px-4 py-2 bg-blue-600 text-white text-xs font-bold rounded-xl hover:bg-blue-700 transition shadow-sm">
@@ -59,6 +59,9 @@
         </button>
       </div>
     </div>
+
+    <!-- NOTIFIKASI TOAST ADMIN (FIXED DI ATAS AGAR SELALU TERLIHAT) -->
+    <div id="admin-toast" class="hidden fixed top-4 right-4 z-[60] max-w-md p-4 rounded-xl text-xs font-bold shadow-lg border"></div>
 
     <!-- RINGKASAN STATUS 4 LOKER & SENSOR IR -->
     <div class="grid grid-cols-2 md:grid-cols-4 gap-4" id="locker-cards">
@@ -84,11 +87,12 @@
               <th class="p-3.5">Nama & Email</th>
               <th class="p-3.5">Metode & No. Rek</th>
               <th class="p-3.5">Total Bayar</th>
-              <th class="p-3.5">Batas Waktu</th>
+              <th class="p-3.5">Waktu & Batas</th>
+              <th class="p-3.5 text-right">Aksi</th>
             </tr>
           </thead>
           <tbody id="active-table-body" class="divide-y divide-slate-100">
-            <tr><td colspan="6" class="p-6 text-center text-slate-400">Memuat data...</td></tr>
+            <tr><td colspan="7" class="p-6 text-center text-slate-400">Memuat data...</td></tr>
           </tbody>
         </table>
       </div>
@@ -112,12 +116,15 @@
               <th class="p-3.5">Loker</th>
               <th class="p-3.5">Layanan</th>
               <th class="p-3.5">Pengguna</th>
+              <th class="p-3.5">Waktu Pinjam / Titip</th>
+              <th class="p-3.5">Waktu Pengembalian</th>
               <th class="p-3.5">Nominal</th>
               <th class="p-3.5">Status</th>
+              <th class="p-3.5 text-right">Aksi</th>
             </tr>
           </thead>
           <tbody id="history-table-body" class="divide-y divide-slate-100">
-            <tr><td colspan="6" class="p-6 text-center text-slate-400">Memuat riwayat...</td></tr>
+            <tr><td colspan="9" class="p-6 text-center text-slate-400">Memuat riwayat...</td></tr>
           </tbody>
         </table>
       </div>
@@ -125,8 +132,58 @@
 
   </div>
 
+  <!-- MODAL EDIT TRANSAKSI & DATA PENGGUNA -->
+  <div id="edit-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm hidden items-center justify-center p-4 z-50">
+    <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+      <div class="flex justify-between items-center border-b border-slate-100 pb-3">
+        <h3 class="font-bold text-slate-800 text-base">✏️ Edit Transaksi #<span id="edit-tx-label"></span></h3>
+        <button type="button" onclick="closeEditModal()" class="text-slate-400 hover:text-slate-700 text-sm font-bold">✕</button>
+      </div>
+
+      <form onsubmit="submitEditTransaction(event)" class="space-y-3 text-xs">
+        <input type="hidden" id="edit-tx-id">
+
+        <div>
+          <label class="block font-bold text-slate-600 uppercase mb-1">Nama Lengkap</label>
+          <input type="text" id="edit-nama" required class="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-lg text-sm outline-none focus:border-blue-600">
+        </div>
+
+        <div>
+          <label class="block font-bold text-slate-600 uppercase mb-1">Email</label>
+          <input type="email" id="edit-email" required class="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-lg text-sm outline-none focus:border-blue-600">
+        </div>
+
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="block font-bold text-slate-600 uppercase mb-1">Metode / Bank</label>
+            <input type="text" id="edit-bank" required class="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-lg text-sm outline-none focus:border-blue-600">
+          </div>
+          <div>
+            <label class="block font-bold text-slate-600 uppercase mb-1">No. Rekening / HP</label>
+            <input type="text" id="edit-norek" required class="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-lg text-sm outline-none focus:border-blue-600">
+          </div>
+        </div>
+
+        <div>
+          <label class="block font-bold text-slate-600 uppercase mb-1">Batas Waktu (Tenggat)</label>
+          <input type="datetime-local" id="edit-tenggat" class="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-lg text-sm outline-none focus:border-blue-600">
+        </div>
+
+        <div class="flex justify-end gap-2 pt-3 border-t border-slate-100">
+          <button type="button" onclick="closeEditModal()" class="px-4 py-2 bg-slate-100 text-slate-700 font-bold rounded-xl hover:bg-slate-200 transition">
+            Batal
+          </button>
+          <button type="submit" id="btn-save-edit" class="px-4 py-2 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition">
+            💾 Simpan Perubahan
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <script>
     const API_URL = `${window.location.origin}/api`;
+    let allTransactions = [];
     let completedTransactions = [];
     let refreshInterval = null;
 
@@ -137,10 +194,34 @@
     function formatDate(isoString) {
       if (!isoString) return '-';
       const d = new Date(isoString);
+      if (isNaN(d.getTime())) return '-';
       return d.toLocaleString('id-ID', {
         day: '2-digit', month: 'short', year: 'numeric',
         hour: '2-digit', minute: '2-digit'
       });
+    }
+
+    function toLocalDatetimeInput(isoString) {
+      if (!isoString) return '';
+      const d = new Date(isoString);
+      if (isNaN(d.getTime())) return '';
+      const offset = d.getTimezoneOffset() * 60000;
+      return new Date(d.getTime() - offset).toISOString().slice(0, 16);
+    }
+
+    function showToast(msg, isSuccess = true) {
+      const toast = document.getElementById('admin-toast');
+      toast.classList.remove('hidden', 'bg-emerald-50', 'text-emerald-700', 'border-emerald-200', 'bg-red-50', 'text-red-700', 'border-red-200');
+      if (isSuccess) {
+        toast.classList.add('bg-emerald-50', 'text-emerald-700', 'border-emerald-200');
+        toast.innerText = '✅ ' + msg;
+      } else {
+        toast.classList.add('bg-red-50', 'text-red-700', 'border-red-200');
+        toast.innerText = '❌ ' + msg;
+      }
+      setTimeout(() => {
+        toast.classList.add('hidden');
+      }, 5000);
     }
 
     async function handleAdminLogin(e) {
@@ -194,8 +275,9 @@
         const data = await res.json();
         if (!data.success) return false;
 
+        allTransactions = data.transactions || [];
         renderLockers(data.lockers, data.irState);
-        renderTransactions(data.transactions);
+        renderTransactions(allTransactions);
         return true;
       } catch (err) {
         console.error('Gagal memuat dashboard:', err);
@@ -246,6 +328,9 @@
               <span>Sensor IR Fisik:</span>
               <span class="font-bold text-slate-600">${hasPhysicalUmbrella ? 'Terdeteksi Objek' : 'Kosong'}</span>
             </div>
+            <button type="button" onclick="unlockLockerAdmin('${l.slot_name}')" class="w-full mt-1 py-1.5 bg-slate-100 hover:bg-slate-800 hover:text-white text-slate-700 text-[11px] font-bold rounded-lg transition">
+              🔓 Buka Pintu Loker
+            </button>
           </div>
         `;
       }).join('');
@@ -259,12 +344,13 @@
 
       const activeBody = document.getElementById('active-table-body');
       if (active.length === 0) {
-        activeBody.innerHTML = `<tr><td colspan="6" class="p-6 text-center text-slate-400 text-xs">Tidak ada pengguna yang sedang menyewa atau menitip saat ini.</td></tr>`;
+        activeBody.innerHTML = `<tr><td colspan="7" class="p-6 text-center text-slate-400 text-xs">Tidak ada pengguna yang sedang menyewa atau menitip saat ini.</td></tr>`;
       } else {
         activeBody.innerHTML = active.map(t => {
           const u = t.users || {};
           const l = t.lockers || {};
           const isLate = new Date() > new Date(t.waktu_tenggat);
+          const safeId = String(t.id);
 
           return `
             <tr class="hover:bg-slate-50 transition">
@@ -283,11 +369,25 @@
                 <div class="text-slate-500">${u.nomor_rekening || '-'}</div>
               </td>
               <td class="p-3.5 font-semibold text-slate-800">${formatRupiah(t.total_bayar)}</td>
-              <td class="p-3.5 text-xs">
-                <div class="${isLate ? 'text-red-600 font-bold' : 'text-slate-600'}">
-                  ${formatDate(t.waktu_tenggat)}
+              <td class="p-3.5 text-xs space-y-1">
+                <div class="text-slate-500">
+                  <span class="font-semibold">Mulai:</span> ${formatDate(t.created_at)}
                 </div>
-                ${isLate ? '<span class="text-[10px] bg-red-100 text-red-700 font-bold px-1.5 py-0.5 rounded">TERLAMBAT</span>' : ''}
+                <div class="${isLate ? 'text-red-600 font-bold' : 'text-slate-700'}">
+                  <span class="font-semibold">Tenggat:</span> ${formatDate(t.waktu_tenggat)}
+                </div>
+                ${isLate ? '<span class="inline-block text-[10px] bg-red-100 text-red-700 font-bold px-1.5 py-0.5 rounded">TERLAMBAT</span>' : ''}
+              </td>
+              <td class="p-3.5 text-right whitespace-nowrap space-x-1">
+                <button type="button" onclick="forceCompleteTransaction('${safeId}')" class="px-2.5 py-1.5 bg-emerald-600 text-white text-[11px] font-bold rounded-lg hover:bg-emerald-700 transition" title="Selesaikan Transaksi">
+                  ✓ Selesai
+                </button>
+                <button type="button" onclick="openEditModal('${safeId}')" class="px-2.5 py-1.5 bg-amber-500 text-white text-[11px] font-bold rounded-lg hover:bg-amber-600 transition" title="Edit Data">
+                  ✏️ Edit
+                </button>
+                <button type="button" onclick="deleteTransaction('${safeId}')" class="px-2.5 py-1.5 bg-red-600 text-white text-[11px] font-bold rounded-lg hover:bg-red-700 transition" title="Hapus Transaksi">
+                  🗑️
+                </button>
               </td>
             </tr>
           `;
@@ -300,25 +400,42 @@
     function renderHistoryRows(list) {
       const historyBody = document.getElementById('history-table-body');
       if (list.length === 0) {
-        historyBody.innerHTML = `<tr><td colspan="6" class="p-6 text-center text-slate-400 text-xs">Belum ada riwayat transaksi selesai.</td></tr>`;
+        historyBody.innerHTML = `<tr><td colspan="9" class="p-6 text-center text-slate-400 text-xs">Belum ada riwayat transaksi selesai.</td></tr>`;
         return;
       }
 
       historyBody.innerHTML = list.map(t => {
         const u = t.users || {};
         const l = t.lockers || {};
+        const safeId = String(t.id);
+        const shortId = safeId.length > 8 ? safeId.slice(0, 8) + '…' : safeId;
+
         return `
           <tr class="hover:bg-slate-50 transition">
-            <td class="p-3.5 text-xs text-slate-400">#${t.id}</td>
+            <td class="p-3.5 text-xs text-slate-400" title="${safeId}">#${shortId}</td>
             <td class="p-3.5 font-semibold text-slate-700">${l.slot_name || '-'}</td>
             <td class="p-3.5 text-xs font-bold ${t.type === 'SEWA' ? 'text-blue-600' : 'text-green-600'}">${t.type}</td>
             <td class="p-3.5">
               <div class="font-semibold text-slate-800">${u.nama_lengkap || '-'}</div>
               <div class="text-xs text-slate-400">${u.email || '-'}</div>
             </td>
+            <td class="p-3.5 text-xs text-slate-600">
+              ${formatDate(t.created_at)}
+            </td>
+            <td class="p-3.5 text-xs text-slate-700 font-medium">
+              ${formatDate(t.waktu_kembali || t.last_status_change)}
+            </td>
             <td class="p-3.5 text-xs font-semibold text-slate-700">${formatRupiah(t.total_bayar)}</td>
             <td class="p-3.5">
               <span class="text-[11px] font-bold bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">SELESAI</span>
+            </td>
+            <td class="p-3.5 text-right whitespace-nowrap space-x-1">
+              <button type="button" onclick="openEditModal('${safeId}')" class="px-2 py-1 bg-slate-100 text-slate-700 text-[11px] font-bold rounded-lg hover:bg-amber-100 hover:text-amber-700 transition" title="Edit Data">
+                ✏️
+              </button>
+              <button type="button" onclick="deleteTransaction('${safeId}')" class="px-2 py-1 bg-slate-100 text-red-600 text-[11px] font-bold rounded-lg hover:bg-red-100 transition" title="Hapus Riwayat">
+                🗑️
+              </button>
             </td>
           </tr>
         `;
@@ -333,6 +450,134 @@
         return nama.includes(q) || email.includes(q);
       });
       renderHistoryRows(filtered);
+    }
+
+    // -------------------------------------------------------------
+    // FUNGSI UPDATE & DELETE ADMIN
+    // -------------------------------------------------------------
+    function openEditModal(txId) {
+      const tx = allTransactions.find(item => String(item.id) === String(txId));
+      if (!tx) {
+        showToast('Data transaksi tidak ditemukan di memori.', false);
+        return;
+      }
+
+      const u = tx.users || {};
+      const safeId = String(tx.id);
+      document.getElementById('edit-tx-id').value = safeId;
+      document.getElementById('edit-tx-label').innerText = safeId.length > 8 ? safeId.slice(0, 8) + '…' : safeId;
+      document.getElementById('edit-nama').value = u.nama_lengkap || '';
+      document.getElementById('edit-email').value = u.email || '';
+      document.getElementById('edit-bank').value = u.bank_wallet || '';
+      document.getElementById('edit-norek').value = u.nomor_rekening || '';
+      document.getElementById('edit-tenggat').value = toLocalDatetimeInput(tx.waktu_tenggat);
+
+      const modal = document.getElementById('edit-modal');
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+    }
+
+    function closeEditModal() {
+      const modal = document.getElementById('edit-modal');
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+    }
+
+    async function submitEditTransaction(e) {
+      e.preventDefault();
+      const savedPass = sessionStorage.getItem('payungteduh_admin_pass');
+      const txId = document.getElementById('edit-tx-id').value;
+      const btn = document.getElementById('btn-save-edit');
+
+      const payload = {
+        nama_lengkap: document.getElementById('edit-nama').value,
+        email: document.getElementById('edit-email').value,
+        bank_wallet: document.getElementById('edit-bank').value,
+        nomor_rekening: document.getElementById('edit-norek').value,
+        waktu_tenggat: document.getElementById('edit-tenggat').value
+      };
+
+      btn.disabled = true;
+      btn.innerText = 'Menyimpan...';
+
+      try {
+        const res = await fetch(`${API_URL}/admin/transactions/${txId}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-admin-password': savedPass
+          },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+
+        if (data.success) {
+          closeEditModal();
+          showToast(data.message, true);
+          loadDashboard();
+        } else {
+          showToast(data.message || 'Gagal menyimpan perubahan.', false);
+        }
+      } catch (err) {
+        showToast('Gagal terhubung ke server: ' + err.message, false);
+      } finally {
+        btn.disabled = false;
+        btn.innerText = '💾 Simpan Perubahan';
+      }
+    }
+
+    async function forceCompleteTransaction(txId) {
+      if (!confirm('Tandai transaksi ini sebagai SELESAI sekarang?')) return;
+      const savedPass = sessionStorage.getItem('payungteduh_admin_pass');
+
+      try {
+        const res = await fetch(`${API_URL}/admin/transactions/${txId}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-admin-password': savedPass
+          },
+          body: JSON.stringify({ action: 'COMPLETE' })
+        });
+        const data = await res.json();
+        showToast(data.message, data.success);
+        if (data.success) loadDashboard();
+      } catch (err) {
+        showToast('Gagal menyelesaikan transaksi.', false);
+      }
+    }
+
+    async function deleteTransaction(txId) {
+      if (!confirm('Yakin ingin menghapus permanen transaksi ini?')) return;
+      const savedPass = sessionStorage.getItem('payungteduh_admin_pass');
+
+      try {
+        const res = await fetch(`${API_URL}/admin/transactions/${txId}`, {
+          method: 'DELETE',
+          headers: { 'x-admin-password': savedPass }
+        });
+        const data = await res.json();
+        showToast(data.message, data.success);
+        if (data.success) loadDashboard();
+      } catch (err) {
+        showToast('Gagal menghapus transaksi.', false);
+      }
+    }
+
+    async function unlockLockerAdmin(slotName) {
+      if (!confirm(`Buka pintu fisik loker ${slotName} sekarang?`)) return;
+      const savedPass = sessionStorage.getItem('payungteduh_admin_pass');
+
+      try {
+        const res = await fetch(`${API_URL}/admin/lockers/${slotName}/unlock`, {
+          method: 'POST',
+          headers: { 'x-admin-password': savedPass }
+        });
+        const data = await res.json();
+        showToast(data.message, data.success);
+      } catch (err) {
+        showToast('Gagal mengirim perintah buka loker.', false);
+      }
     }
 
     // Otomatis tampilkan dashboard jika sudah login dari index.html di sesi browser yang sama

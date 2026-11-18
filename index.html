@@ -9,13 +9,48 @@
 </head>
 <body class="bg-slate-100 min-h-screen flex flex-col items-center justify-center p-4">
   <div class="bg-white p-6 rounded-2xl shadow-xl w-full max-w-md border border-slate-200">
-    <div class="text-center mb-5">
+    <div class="text-center mb-4">
       <h1 class="text-2xl font-bold text-slate-800">☂️ PayungTeduh</h1>
       <p class="text-slate-500 text-sm">Sistem Loker Payung Otomatis</p>
     </div>
 
-    <!-- LAYAR PILIH PERAN (USER ATAU ADMIN) -->
+    <!-- LAYAR PILIH PERAN (USER ATAU ADMIN) + TABEL KETERSEDIAAN -->
     <div id="role-select-screen" class="space-y-4">
+      <!-- TABEL LIVE KETERSEDIAAN (HANYA MUNCUL DI HALAMAN AWAL) -->
+      <div class="overflow-hidden border border-slate-200 rounded-xl bg-white shadow-xs">
+        <div class="bg-slate-50 px-3 py-1.5 border-b border-slate-200 flex justify-between items-center">
+          <span class="text-[11px] font-bold text-slate-600 uppercase">📡 Ketersediaan Loker Live</span>
+          <span id="live-sync-badge" class="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600">
+            <span class="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-ping"></span> Real-time IR
+          </span>
+        </div>
+        <table class="w-full text-xs text-left">
+          <thead class="bg-slate-50/60 text-slate-500 border-b border-slate-100">
+            <tr>
+              <th class="py-1.5 px-3 font-semibold">Kategori</th>
+              <th class="py-1.5 px-3 font-semibold text-center">Tersedia</th>
+              <th class="py-1.5 px-3 font-semibold text-right">Status</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100">
+            <tr>
+              <td class="py-2 px-3 font-bold text-blue-700">☂️ Payung Sewa</td>
+              <td id="live-sewa-count" class="py-2 px-3 font-extrabold text-center text-slate-800">- / 2</td>
+              <td class="py-2 px-3 text-right">
+                <span id="live-sewa-status" class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-500">Memuat...</span>
+              </td>
+            </tr>
+            <tr>
+              <td class="py-2 px-3 font-bold text-green-700">📦 Slot Titip Kosong</td>
+              <td id="live-titip-count" class="py-2 px-3 font-extrabold text-center text-slate-800">- / 2</td>
+              <td class="py-2 px-3 text-right">
+                <span id="live-titip-status" class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-500">Memuat...</span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
       <p class="text-xs font-bold text-slate-500 uppercase text-center">Pilih Akses Masuk</p>
 
       <div class="grid grid-cols-2 gap-3">
@@ -34,7 +69,7 @@
         </button>
       </div>
 
-      <!-- FORM LOGIN PASSWORD ADMIN (MUNCUL SAAT KLIK ADMIN) -->
+      <!-- FORM LOGIN PASSWORD ADMIN -->
       <form id="inline-admin-login" onsubmit="handleInlineAdminLogin(event)" class="hidden bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3 mt-2">
         <div class="flex justify-between items-center">
           <span class="text-xs font-bold text-slate-700 uppercase">🔐 Verifikasi Admin</span>
@@ -48,7 +83,7 @@
       </form>
     </div>
 
-    <!-- KONTEN UTAMA USER (MUNCUL SAAT PILIH PENGGUNA) -->
+    <!-- KONTEN UTAMA USER (LANGSUNG FORM TRANSAKSI TANPA TABEL KETERSEDIAAN) -->
     <div id="main-app-content" class="hidden">
       <div class="flex justify-between items-center mb-3 pb-2 border-b border-slate-100">
         <span class="text-[11px] font-bold bg-blue-50 text-blue-700 px-2.5 py-1 rounded-full">Mode Pengguna</span>
@@ -100,39 +135,6 @@
           </div>
         </div>
 
-        <!-- TABEL LIVE KETERSEDIAAN PAYUNG & SLOT TITIP -->
-        <div class="overflow-hidden border border-slate-200 rounded-xl bg-white">
-          <div class="bg-slate-50 px-3 py-1.5 border-b border-slate-200 flex justify-between items-center">
-            <span class="text-[11px] font-bold text-slate-600 uppercase">📡 Ketersediaan Loker Live</span>
-            <span class="text-[10px] font-bold text-emerald-600">● Real-time</span>
-          </div>
-          <table class="w-full text-xs text-left">
-            <thead class="bg-slate-50/60 text-slate-500 border-b border-slate-100">
-              <tr>
-                <th class="py-1.5 px-3 font-semibold">Kategori</th>
-                <th class="py-1.5 px-3 font-semibold text-center">Tersedia</th>
-                <th class="py-1.5 px-3 font-semibold text-right">Status</th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-slate-100">
-              <tr>
-                <td class="py-2 px-3 font-bold text-blue-700">☂️ Payung Sewa</td>
-                <td id="live-sewa-count" class="py-2 px-3 font-extrabold text-center text-slate-800">- / 2</td>
-                <td class="py-2 px-3 text-right">
-                  <span id="live-sewa-status" class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-500">Memuat...</span>
-                </td>
-              </tr>
-              <tr>
-                <td class="py-2 px-3 font-bold text-green-700">📦 Slot Titip Kosong</td>
-                <td id="live-titip-count" class="py-2 px-3 font-extrabold text-center text-slate-800">- / 2</td>
-                <td class="py-2 px-3 text-right">
-                  <span id="live-titip-status" class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-500">Memuat...</span>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
         <div>
           <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Pilih Layanan</label>
           <div class="grid grid-cols-2 gap-2">
@@ -149,7 +151,7 @@
           </div>
         </div>
 
-        <!-- KARTU RINCIAN HARGA & TOMBOL BAYAR (TERSEMBUNYI SEBELUM LAYANAN DIPILIH) -->
+        <!-- KARTU RINCIAN HARGA & TOMBOL BAYAR (HANYA MUNCUL SETELAH PILIH LAYANAN) -->
         <div id="service-checkout-section" class="hidden space-y-4">
           <div class="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-2 text-xs">
             <div class="flex justify-between items-center border-b border-slate-200 pb-1.5">
@@ -174,10 +176,6 @@
             💳 Bayar & Buka Loker
           </button>
         </div>
-
-        <button type="submit" id="btn-submit-tx" class="w-full py-3 bg-blue-600 text-white font-bold rounded-xl shadow hover:bg-blue-700 transition">
-          💳 Bayar & Buka Loker
-        </button>
       </form>
 
       <!-- 2. FORM KEMBALIKAN PAYUNG SEWA -->
