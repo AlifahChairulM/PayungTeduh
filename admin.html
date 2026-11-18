@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Dashboard - PayungTeduh</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body class="bg-slate-100 min-h-screen p-4 md:p-8">
+
+  <!-- LAYAR LOGIN ADMIN (JIKA BUKA LANGSUNG TANPA LOGIN DARI INDEX) -->
+  <div id="admin-login-screen" class="min-h-[80vh] flex items-center justify-center">
+    <div class="bg-white p-6 md:p-8 rounded-2xl shadow-lg border border-slate-200 w-full max-w-sm space-y-5">
+      <div class="text-center space-y-1">
+        <div class="w-12 h-12 bg-slate-900 text-white rounded-2xl flex items-center justify-center text-2xl mx-auto mb-2">🛡️</div>
+        <h1 class="text-xl font-bold text-slate-800">Login Admin PayungTeduh</h1>
+        <p class="text-xs text-slate-500">Masukkan kata sandi admin untuk memantau loker & riwayat transaksi.</p>
+      </div>
+
+      <form onsubmit="handleAdminLogin(event)" class="space-y-4">
+        <div>
+          <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Password Admin</label>
+          <input type="password" id="admin-pass-input" required placeholder="Masukkan password..." class="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm outline-none focus:border-blue-600">
+        </div>
+        <p id="login-error-msg" class="text-xs font-semibold text-red-600 hidden">❌ Password admin salah!</p>
+        <button type="submit" id="btn-admin-login" class="w-full py-2.5 bg-slate-900 text-white font-bold rounded-xl text-sm hover:bg-slate-800 transition">
+          🔐 Masuk Dashboard
+        </button>
+      </form>
+
+      <div class="text-center pt-1">
+        <a href="index.html" class="text-xs text-slate-400 hover:text-slate-600 underline">← Kembali ke Halaman Utama</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- KONTEN UTAMA DASHBOARD ADMIN -->
+  <div id="admin-dashboard-content" class="max-w-5xl mx-auto space-y-6 hidden">
+    
+    <!-- HEADER ADMIN -->
+    <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+      <div>
+        <div class="flex items-center gap-2">
+          <h1 class="text-2xl font-bold text-slate-800">🛡️ POV Admin - PayungTeduh</h1>
+          <span class="text-xs font-bold bg-emerald-100 text-emerald-700 px-2.5 py-0.5 rounded-full">Live Monitor</span>
+        </div>
+        <p class="text-slate-500 text-sm mt-1">Pantau ketersediaan loker fisik, penyewa aktif, dan riwayat transaksi.</p>
+      </div>
+      <div class="flex flex-wrap items-center gap-2">
+        <button onclick="loadDashboard()" class="px-4 py-2 bg-blue-600 text-white text-xs font-bold rounded-xl hover:bg-blue-700 transition shadow-sm">
+          🔄 Refresh Data
+        </button>
+        <a href="index.html" class="px-4 py-2 bg-slate-100 text-slate-700 text-xs font-bold rounded-xl hover:bg-slate-200 transition">
+          ← Halaman User
+        </a>
+        <button onclick="logoutAdmin()" class="px-4 py-2 bg-red-600 text-white text-xs font-bold rounded-xl hover:bg-red-700 transition shadow-sm">
+          🚪 Keluar
+        </button>
+      </div>
+    </div>
+
+    <!-- RINGKASAN STATUS 4 LOKER & SENSOR IR -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4" id="locker-cards">
+      <div class="bg-white p-4 rounded-2xl border border-slate-200 text-center text-sm text-slate-400">Memuat data loker...</div>
+    </div>
+
+    <!-- TABEL PENYEWA & PENITIP AKTIF -->
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+      <div class="p-5 border-b border-slate-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+        <div>
+          <h2 class="text-lg font-bold text-slate-800">📋 Pengguna Aktif (Sedang Sewa / Titip)</h2>
+          <p class="text-xs text-slate-500">Daftar pengguna yang belum mengembalikan atau mengambil payung.</p>
+        </div>
+        <span id="active-count-badge" class="bg-blue-100 text-blue-700 text-xs font-bold px-3 py-1 rounded-full">0 Aktif</span>
+      </div>
+
+      <div class="overflow-x-auto">
+        <table class="w-full text-left border-collapse text-sm">
+          <thead>
+            <tr class="bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-600 uppercase">
+              <th class="p-3.5">Loker</th>
+              <th class="p-3.5">Layanan</th>
+              <th class="p-3.5">Nama & Email</th>
+              <th class="p-3.5">Metode & No. Rek</th>
+              <th class="p-3.5">Total Bayar</th>
+              <th class="p-3.5">Batas Waktu</th>
+            </tr>
+          </thead>
+          <tbody id="active-table-body" class="divide-y divide-slate-100">
+            <tr><td colspan="6" class="p-6 text-center text-slate-400">Memuat data...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- TABEL RIWAYAT TRANSAKSI SELESAI -->
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+      <div class="p-5 border-b border-slate-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+        <div>
+          <h2 class="text-lg font-bold text-slate-800">🗂️ Riwayat Transaksi Selesai</h2>
+          <p class="text-xs text-slate-500">50 transaksi terakhir yang sudah dikembalikan/diambil.</p>
+        </div>
+        <input type="text" id="search-history" onkeyup="filterHistory()" placeholder="Cari nama / email..." class="p-2 bg-slate-50 border rounded-lg text-xs outline-none w-full sm:w-56">
+      </div>
+
+      <div class="overflow-x-auto">
+        <table class="w-full text-left border-collapse text-sm">
+          <thead>
+            <tr class="bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-600 uppercase">
+              <th class="p-3.5">ID</th>
+              <th class="p-3.5">Loker</th>
+              <th class="p-3.5">Layanan</th>
+              <th class="p-3.5">Pengguna</th>
+              <th class="p-3.5">Nominal</th>
+              <th class="p-3.5">Status</th>
+            </tr>
+          </thead>
+          <tbody id="history-table-body" class="divide-y divide-slate-100">
+            <tr><td colspan="6" class="p-6 text-center text-slate-400">Memuat riwayat...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    const API_URL = `${window.location.origin}/api`;
+    let completedTransactions = [];
+    let refreshInterval = null;
+
+    function formatRupiah(num) {
+      return 'Rp ' + Number(num || 0).toLocaleString('id-ID');
+    }
+
+    function formatDate(isoString) {
+      if (!isoString) return '-';
+      const d = new Date(isoString);
+      return d.toLocaleString('id-ID', {
+        day: '2-digit', month: 'short', year: 'numeric',
+        hour: '2-digit', minute: '2-digit'
+      });
+    }
+
+    async function handleAdminLogin(e) {
+      e.preventDefault();
+      const pass = document.getElementById('admin-pass-input').value.trim();
+      const errorEl = document.getElementById('login-error-msg');
+      const btn = document.getElementById('btn-admin-login');
+
+      errorEl.classList.add('hidden');
+      btn.disabled = true;
+      btn.innerText = 'Memverifikasi...';
+
+      const ok = await fetchDashboardData(pass);
+      btn.disabled = false;
+      btn.innerText = '🔐 Masuk Dashboard';
+
+      if (ok) {
+        sessionStorage.setItem('payungteduh_admin_pass', pass);
+        showDashboardUI();
+      } else {
+        errorEl.classList.remove('hidden');
+      }
+    }
+
+    function showDashboardUI() {
+      document.getElementById('admin-login-screen').classList.add('hidden');
+      document.getElementById('admin-dashboard-content').classList.remove('hidden');
+      if (!refreshInterval) {
+        refreshInterval = setInterval(loadDashboard, 5000);
+      }
+    }
+
+    function logoutAdmin() {
+      sessionStorage.removeItem('payungteduh_admin_pass');
+      if (refreshInterval) {
+        clearInterval(refreshInterval);
+        refreshInterval = null;
+      }
+      document.getElementById('admin-pass-input').value = '';
+      document.getElementById('admin-dashboard-content').classList.add('hidden');
+      document.getElementById('admin-login-screen').classList.remove('hidden');
+    }
+
+    async function fetchDashboardData(password) {
+      try {
+        const res = await fetch(`${API_URL}/admin/dashboard`, {
+          headers: { 'x-admin-password': password }
+        });
+        if (res.status === 401) return false;
+
+        const data = await res.json();
+        if (!data.success) return false;
+
+        renderLockers(data.lockers, data.irState);
+        renderTransactions(data.transactions);
+        return true;
+      } catch (err) {
+        console.error('Gagal memuat dashboard:', err);
+        return false;
+      }
+    }
+
+    async function loadDashboard() {
+      const savedPass = sessionStorage.getItem('payungteduh_admin_pass');
+      if (!savedPass) return logoutAdmin();
+
+      const ok = await fetchDashboardData(savedPass);
+      if (!ok) logoutAdmin();
+    }
+
+    function renderLockers(lockers, irState) {
+      const container = document.getElementById('locker-cards');
+      const irMap = {
+        'SEWA_1': irState.ir1,
+        'SEWA_2': irState.ir2,
+        'TITIP_1': irState.ir4,
+        'TITIP_2': irState.ir5
+      };
+
+      container.innerHTML = lockers.map(l => {
+        const isSewa = l.category === 'SEWA';
+        const irVal = irMap[l.slot_name];
+        const hasPhysicalUmbrella = irVal === 1;
+
+        const isReady = isSewa ? hasPhysicalUmbrella : !hasPhysicalUmbrella;
+        const badgeClass = isReady ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700';
+        const statusText = isSewa
+          ? (hasPhysicalUmbrella ? 'Payung Tersedia' : 'Sedang Disewa / Kosong')
+          : (!hasPhysicalUmbrella ? 'Slot Kosong (Siap Titip)' : 'Terisi Payung Titipan');
+
+        return `
+          <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-2">
+            <div class="flex justify-between items-center">
+              <span class="font-bold text-slate-800">${l.slot_name}</span>
+              <span class="text-[10px] font-bold px-2 py-0.5 rounded ${isSewa ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'}">
+                ${l.category}
+              </span>
+            </div>
+            <div class="text-xs font-semibold px-2.5 py-1.5 rounded-lg ${badgeClass}">
+              ${statusText}
+            </div>
+            <div class="text-[11px] text-slate-400 flex justify-between pt-1">
+              <span>Sensor IR Fisik:</span>
+              <span class="font-bold text-slate-600">${hasPhysicalUmbrella ? 'Terdeteksi Objek' : 'Kosong'}</span>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function renderTransactions(transactions) {
+      const active = transactions.filter(t => t.status_transaksi === 'ACTIVE');
+      completedTransactions = transactions.filter(t => t.status_transaksi !== 'ACTIVE');
+
+      document.getElementById('active-count-badge').innerText = `${active.length} Aktif`;
+
+      const activeBody = document.getElementById('active-table-body');
+      if (active.length === 0) {
+        activeBody.innerHTML = `<tr><td colspan="6" class="p-6 text-center text-slate-400 text-xs">Tidak ada pengguna yang sedang menyewa atau menitip saat ini.</td></tr>`;
+      } else {
+        activeBody.innerHTML = active.map(t => {
+          const u = t.users || {};
+          const l = t.lockers || {};
+          const isLate = new Date() > new Date(t.waktu_tenggat);
+
+          return `
+            <tr class="hover:bg-slate-50 transition">
+              <td class="p-3.5 font-bold text-slate-800">${l.slot_name || '-'}</td>
+              <td class="p-3.5">
+                <span class="text-xs font-bold px-2 py-1 rounded-md ${t.type === 'SEWA' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'}">
+                  ${t.type}
+                </span>
+              </td>
+              <td class="p-3.5">
+                <div class="font-bold text-slate-800">${u.nama_lengkap || '-'}</div>
+                <div class="text-xs text-slate-500">${u.email || '-'}</div>
+              </td>
+              <td class="p-3.5 text-xs">
+                <div class="font-semibold text-slate-700">${u.bank_wallet || '-'}</div>
+                <div class="text-slate-500">${u.nomor_rekening || '-'}</div>
+              </td>
+              <td class="p-3.5 font-semibold text-slate-800">${formatRupiah(t.total_bayar)}</td>
+              <td class="p-3.5 text-xs">
+                <div class="${isLate ? 'text-red-600 font-bold' : 'text-slate-600'}">
+                  ${formatDate(t.waktu_tenggat)}
+                </div>
+                ${isLate ? '<span class="text-[10px] bg-red-100 text-red-700 font-bold px-1.5 py-0.5 rounded">TERLAMBAT</span>' : ''}
+              </td>
+            </tr>
+          `;
+        }).join('');
+      }
+
+      renderHistoryRows(completedTransactions);
+    }
+
+    function renderHistoryRows(list) {
+      const historyBody = document.getElementById('history-table-body');
+      if (list.length === 0) {
+        historyBody.innerHTML = `<tr><td colspan="6" class="p-6 text-center text-slate-400 text-xs">Belum ada riwayat transaksi selesai.</td></tr>`;
+        return;
+      }
+
+      historyBody.innerHTML = list.map(t => {
+        const u = t.users || {};
+        const l = t.lockers || {};
+        return `
+          <tr class="hover:bg-slate-50 transition">
+            <td class="p-3.5 text-xs text-slate-400">#${t.id}</td>
+            <td class="p-3.5 font-semibold text-slate-700">${l.slot_name || '-'}</td>
+            <td class="p-3.5 text-xs font-bold ${t.type === 'SEWA' ? 'text-blue-600' : 'text-green-600'}">${t.type}</td>
+            <td class="p-3.5">
+              <div class="font-semibold text-slate-800">${u.nama_lengkap || '-'}</div>
+              <div class="text-xs text-slate-400">${u.email || '-'}</div>
+            </td>
+            <td class="p-3.5 text-xs font-semibold text-slate-700">${formatRupiah(t.total_bayar)}</td>
+            <td class="p-3.5">
+              <span class="text-[11px] font-bold bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">SELESAI</span>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function filterHistory() {
+      const q = document.getElementById('search-history').value.toLowerCase();
+      const filtered = completedTransactions.filter(t => {
+        const nama = (t.users?.nama_lengkap || '').toLowerCase();
+        const email = (t.users?.email || '').toLowerCase();
+        return nama.includes(q) || email.includes(q);
+      });
+      renderHistoryRows(filtered);
+    }
+
+    // Otomatis tampilkan dashboard jika sudah login dari index.html di sesi browser yang sama
+    document.addEventListener('DOMContentLoaded', async () => {
+      const savedPass = sessionStorage.getItem('payungteduh_admin_pass');
+      if (savedPass) {
+        const ok = await fetchDashboardData(savedPass);
+        if (ok) showDashboardUI();
+        else sessionStorage.removeItem('payungteduh_admin_pass');
+      }
+    });
+  </script>
+</body>
+</html>

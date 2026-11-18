@@ -4,145 +4,300 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>PayungTeduh - System</title>
-  <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- Custom CSS -->
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body class="bg-slate-100 min-h-screen flex flex-col items-center justify-center p-4">
   <div class="bg-white p-6 rounded-2xl shadow-xl w-full max-w-md border border-slate-200">
-    <div class="text-center mb-6">
+    <div class="text-center mb-5">
       <h1 class="text-2xl font-bold text-slate-800">☂️ PayungTeduh</h1>
       <p class="text-slate-500 text-sm">Sistem Loker Payung Otomatis</p>
     </div>
 
-    <!-- TAB NAVIGASI -->
-    <div class="flex border-b mb-6 text-sm font-semibold">
-      <button id="tab-new" onclick="switchTab('new')" class="w-1/3 py-2 border-b-2 border-blue-600 text-blue-600 transition-all">Sewa/Titip</button>
-      <button id="tab-return" onclick="switchTab('return')" class="w-1/3 py-2 text-slate-500 hover:text-blue-600 transition-all">Kembalikan Payung</button>
-      <button id="tab-retrieve" onclick="switchTab('retrieve')" class="w-1/3 py-2 text-slate-500 hover:text-blue-600 transition-all">Ambil Payung</button>
+    <!-- LAYAR PILIH PERAN (USER ATAU ADMIN) -->
+    <div id="role-select-screen" class="space-y-4">
+      <p class="text-xs font-bold text-slate-500 uppercase text-center">Pilih Akses Masuk</p>
+
+      <div class="grid grid-cols-2 gap-3">
+        <!-- PILIHAN USER -->
+        <button type="button" onclick="enterAsUser()" class="p-4 border-2 border-blue-200 bg-blue-50/40 rounded-2xl hover:border-blue-600 hover:bg-blue-50 flex flex-col items-center text-center transition">
+          <span class="text-3xl mb-2">☂️</span>
+          <span class="font-bold text-sm text-slate-800">Pengguna</span>
+          <span class="text-[11px] text-slate-500 mt-0.5">Sewa, Titip & Kembali</span>
+        </button>
+
+        <!-- PILIHAN ADMIN -->
+        <button type="button" onclick="showAdminLoginBox()" class="p-4 border-2 border-slate-200 bg-slate-50/60 rounded-2xl hover:border-slate-800 hover:bg-slate-100 flex flex-col items-center text-center transition">
+          <span class="text-3xl mb-2">🛡️</span>
+          <span class="font-bold text-sm text-slate-800">Admin</span>
+          <span class="text-[11px] text-slate-500 mt-0.5">Monitoring & Riwayat</span>
+        </button>
+      </div>
+
+      <!-- FORM LOGIN PASSWORD ADMIN (MUNCUL SAAT KLIK ADMIN) -->
+      <form id="inline-admin-login" onsubmit="handleInlineAdminLogin(event)" class="hidden bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3 mt-2">
+        <div class="flex justify-between items-center">
+          <span class="text-xs font-bold text-slate-700 uppercase">🔐 Verifikasi Admin</span>
+          <button type="button" onclick="hideAdminLoginBox()" class="text-xs text-slate-400 hover:text-slate-600">Batal</button>
+        </div>
+        <input type="password" id="inline-admin-pass" required placeholder="Masukkan password admin..." class="w-full p-2.5 bg-white border border-slate-300 rounded-lg text-sm outline-none focus:border-slate-800">
+        <p id="inline-admin-error" class="text-xs font-semibold text-red-600 hidden">❌ Password admin salah!</p>
+        <button type="submit" id="btn-inline-admin" class="w-full py-2.5 bg-slate-900 text-white font-bold rounded-lg text-xs hover:bg-slate-800 transition">
+          Masuk Dashboard Admin →
+        </button>
+      </form>
     </div>
 
-    <!-- 1. FORM TRANSAKSI BARU -->
-    <form id="form-new" onsubmit="handleNewTransaction(event)" class="space-y-4">
-      <div>
-        <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Nama Lengkap</label>
-        <input type="text" id="nama" required class="w-full p-2.5 bg-slate-50 border rounded-lg text-sm outline-none">
+    <!-- KONTEN UTAMA USER (MUNCUL SAAT PILIH PENGGUNA) -->
+    <div id="main-app-content" class="hidden">
+      <div class="flex justify-between items-center mb-3 pb-2 border-b border-slate-100">
+        <span class="text-[11px] font-bold bg-blue-50 text-blue-700 px-2.5 py-1 rounded-full">Mode Pengguna</span>
+        <button type="button" onclick="backToRoleSelect()" class="text-xs text-slate-400 hover:text-slate-700 font-semibold">
+          ← Ganti Akses
+        </button>
       </div>
-      <div>
-        <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Email Aktif</label>
-        <input type="email" id="email" required class="w-full p-2.5 bg-slate-50 border rounded-lg text-sm outline-none">
+
+      <!-- TAB NAVIGASI -->
+      <div class="flex border-b mb-6 text-sm font-semibold">
+        <button id="tab-new" onclick="switchTab('new')" class="w-1/3 py-2 border-b-2 border-blue-600 text-blue-600 transition-all">Sewa/Titip</button>
+        <button id="tab-return" onclick="switchTab('return')" class="w-1/3 py-2 text-slate-500 hover:text-blue-600 transition-all">Kembalikan Payung</button>
+        <button id="tab-retrieve" onclick="switchTab('retrieve')" class="w-1/3 py-2 text-slate-500 hover:text-blue-600 transition-all">Ambil Payung</button>
       </div>
-      <div class="grid grid-cols-2 gap-2">
+
+      <!-- 1. FORM TRANSAKSI BARU -->
+      <form id="form-new" onsubmit="handleNewTransaction(event)" class="space-y-4">
         <div>
-          <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Metode Refund</label>
-          <select id="bank" class="w-full p-2.5 bg-slate-50 border rounded-lg text-sm outline-none font-medium">
-            <optgroup label="E-Wallet">
-              <option value="GoPay">GoPay</option>
-              <option value="OVO">OVO</option>
-              <option value="Dana">Dana</option>
-              <option value="ShopeePay">ShopeePay</option>
-              <option value="AstraPay">AstraPay</option>
-            </optgroup>
-            <optgroup label="Bank Transfer">
-              <option value="BCA">Bank BCA</option>
-              <option value="BRI">Bank BRI</option>
-              <option value="BNI">Bank BNI</option>
-              <option value="Mandiri">Bank Mandiri</option>
-              <option value="CIMB">Bank CIMB Niaga</option>
-            </optgroup>
-          </select>
+          <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Nama Lengkap</label>
+          <input type="text" id="nama" required placeholder="Contoh: Budi Santoso" class="w-full p-2.5 bg-slate-50 border rounded-lg text-sm outline-none focus:border-blue-500">
         </div>
         <div>
-          <label class="block text-xs font-bold text-slate-600 uppercase mb-1">No. Rekening/HP</label>
-          <input type="text" id="no_rek" required class="w-full p-2.5 bg-slate-50 border rounded-lg text-sm outline-none">
+          <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Email Aktif</label>
+          <input type="email" id="email" required placeholder="nama@email.com" class="w-full p-2.5 bg-slate-50 border rounded-lg text-sm outline-none focus:border-blue-500">
         </div>
-      </div>
-      <div>
-        <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Layanan</label>
         <div class="grid grid-cols-2 gap-2">
-          <label class="border p-3 rounded-xl flex flex-col items-center cursor-pointer">
-            <input type="radio" name="type" value="SEWA" checked>
-            <span class="font-bold text-sm text-blue-600">Sewa Payung</span>
-          </label>
-          <label class="border p-3 rounded-xl flex flex-col items-center cursor-pointer">
-            <input type="radio" name="type" value="TITIP">
-            <span class="font-bold text-sm text-green-600">Titip Payung</span>
-          </label>
+          <div>
+            <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Metode Bayar & Refund</label>
+            <select id="bank" onchange="updatePricePreview()" class="w-full p-2.5 bg-slate-50 border rounded-lg text-sm outline-none font-medium focus:border-blue-500">
+              <optgroup label="E-Wallet">
+                <option value="GoPay">GoPay</option>
+                <option value="OVO">OVO</option>
+                <option value="Dana">Dana</option>
+                <option value="ShopeePay">ShopeePay</option>
+                <option value="AstraPay">AstraPay</option>
+              </optgroup>
+              <optgroup label="Bank Transfer">
+                <option value="BCA">Bank BCA</option>
+                <option value="BRI">Bank BRI</option>
+                <option value="BNI">Bank BNI</option>
+                <option value="Mandiri">Bank Mandiri</option>
+                <option value="CIMB">Bank CIMB Niaga</option>
+              </optgroup>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-600 uppercase mb-1">No. Rekening/HP</label>
+            <input type="text" id="no_rek" required placeholder="0812xxxx" class="w-full p-2.5 bg-slate-50 border rounded-lg text-sm outline-none focus:border-blue-500">
+          </div>
+        </div>
+
+        <!-- TABEL LIVE KETERSEDIAAN PAYUNG & SLOT TITIP -->
+        <div class="overflow-hidden border border-slate-200 rounded-xl bg-white">
+          <div class="bg-slate-50 px-3 py-1.5 border-b border-slate-200 flex justify-between items-center">
+            <span class="text-[11px] font-bold text-slate-600 uppercase">📡 Ketersediaan Loker Live</span>
+            <span class="text-[10px] font-bold text-emerald-600">● Real-time</span>
+          </div>
+          <table class="w-full text-xs text-left">
+            <thead class="bg-slate-50/60 text-slate-500 border-b border-slate-100">
+              <tr>
+                <th class="py-1.5 px-3 font-semibold">Kategori</th>
+                <th class="py-1.5 px-3 font-semibold text-center">Tersedia</th>
+                <th class="py-1.5 px-3 font-semibold text-right">Status</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              <tr>
+                <td class="py-2 px-3 font-bold text-blue-700">☂️ Payung Sewa</td>
+                <td id="live-sewa-count" class="py-2 px-3 font-extrabold text-center text-slate-800">- / 2</td>
+                <td class="py-2 px-3 text-right">
+                  <span id="live-sewa-status" class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-500">Memuat...</span>
+                </td>
+              </tr>
+              <tr>
+                <td class="py-2 px-3 font-bold text-green-700">📦 Slot Titip Kosong</td>
+                <td id="live-titip-count" class="py-2 px-3 font-extrabold text-center text-slate-800">- / 2</td>
+                <td class="py-2 px-3 text-right">
+                  <span id="live-titip-status" class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-500">Memuat...</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Pilih Layanan</label>
+          <div class="grid grid-cols-2 gap-2">
+            <label class="border-2 border-blue-200 bg-blue-50/40 p-3 rounded-xl flex flex-col items-center cursor-pointer hover:border-blue-500 transition">
+              <input type="radio" name="type" value="SEWA" onchange="updatePricePreview()">
+              <span class="font-bold text-sm text-blue-600 mt-1">Sewa Payung</span>
+              <span class="text-[11px] text-slate-500">Rp 5.000 + Deposit</span>
+            </label>
+            <label class="border-2 border-green-200 bg-green-50/40 p-3 rounded-xl flex flex-col items-center cursor-pointer hover:border-green-500 transition">
+              <input type="radio" name="type" value="TITIP" onchange="updatePricePreview()">
+              <span class="font-bold text-sm text-green-600 mt-1">Titip Payung</span>
+              <span class="text-[11px] text-slate-500">Rp 3.000 + Deposit</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- KARTU RINCIAN HARGA & TOMBOL BAYAR (TERSEMBUNYI SEBELUM LAYANAN DIPILIH) -->
+        <div id="service-checkout-section" class="hidden space-y-4">
+          <div class="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-2 text-xs">
+            <div class="flex justify-between items-center border-b border-slate-200 pb-1.5">
+              <span class="font-bold text-slate-700 uppercase">Rincian Pembayaran</span>
+              <span id="preview-method-badge" class="bg-blue-100 text-blue-700 font-bold px-2 py-0.5 rounded-md">Saldo GoPay</span>
+            </div>
+            <div class="flex justify-between text-slate-600">
+              <span id="preview-service-label">Biaya Sewa (Maks. 48 Jam)</span>
+              <span id="preview-biaya" class="font-semibold">Rp 5.000</span>
+            </div>
+            <div class="flex justify-between text-slate-600">
+              <span>Deposit Jaminan (Dikembalikan)</span>
+              <span id="preview-deposit" class="font-semibold">Rp 20.000</span>
+            </div>
+            <div class="flex justify-between items-center border-t border-slate-200 pt-2 text-sm font-bold text-slate-800">
+              <span>Total Potong Saldo</span>
+              <span id="preview-total" class="text-blue-600">Rp 25.000</span>
+            </div>
+          </div>
+
+          <button type="submit" id="btn-submit-tx" class="w-full py-3 bg-blue-600 text-white font-bold rounded-xl shadow hover:bg-blue-700 transition">
+            💳 Bayar & Buka Loker
+          </button>
+        </div>
+
+        <button type="submit" id="btn-submit-tx" class="w-full py-3 bg-blue-600 text-white font-bold rounded-xl shadow hover:bg-blue-700 transition">
+          💳 Bayar & Buka Loker
+        </button>
+      </form>
+
+      <!-- 2. FORM KEMBALIKAN PAYUNG SEWA -->
+      <div id="form-return" class="space-y-4 hidden">
+        <div id="return-options" class="space-y-3">
+          <p class="text-xs font-bold text-slate-600 uppercase text-center">Pilih Metode Pengembalian</p>
+          <div class="grid grid-cols-2 gap-3">
+            <button type="button" onclick="selectReturnMethod('rfid')" class="p-4 border-2 border-slate-200 rounded-xl hover:border-blue-500 hover:bg-blue-50 flex flex-col items-center text-center transition">
+              <span class="text-2xl mb-1">🏷️</span>
+              <span class="font-bold text-xs text-slate-700">Scan Stiker RFID</span>
+              <span class="text-[10px] text-slate-400">Tempelkan stiker payung ke scanner</span>
+            </button>
+            <button type="button" onclick="selectReturnMethod('email')" class="p-4 border-2 border-slate-200 rounded-xl hover:border-blue-500 hover:bg-blue-50 flex flex-col items-center text-center transition">
+              <span class="text-2xl mb-1">✉️</span>
+              <span class="font-bold text-xs text-slate-700">Kode OTP Email</span>
+              <span class="text-[10px] text-slate-400">Verifikasi dengan email terdaftar</span>
+            </button>
+          </div>
+        </div>
+
+        <div id="return-rfid-view" class="space-y-4 hidden text-center p-4 bg-slate-50 border rounded-xl">
+          <div class="animate-pulse text-4xl mb-2">📡</div>
+          <h3 class="font-bold text-slate-800 text-sm">Silakan Scan Stiker RFID</h3>
+          <p class="text-xs text-slate-500">Tempelkan stiker RFID yang berada di payung ke alat scanner fisik loker.</p>
+          <button type="button" onclick="resetReturnView()" class="mt-2 text-xs text-blue-600 font-semibold underline">← Kembali ke Pilihan</button>
+        </div>
+
+        <div id="return-email-view" class="space-y-4 hidden">
+          <div>
+            <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Email Terdaftar</label>
+            <input type="email" id="ret_email" required class="w-full p-2.5 bg-slate-50 border rounded-lg text-sm outline-none">
+          </div>
+          <button type="button" onclick="requestOTP(event, 'SEWA', 'ret_email')" class="w-full py-2.5 bg-slate-800 text-white font-bold rounded-lg text-xs hover:bg-slate-900 transition">📩 Kirim Kode OTP Verifikasi</button>
+          
+          <div class="border-t pt-3">
+            <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Masukkan Kode OTP</label>
+            <input type="text" id="ret_otp" maxlength="4" placeholder="4 Digit OTP" class="w-full p-2.5 bg-slate-50 border rounded-lg text-sm outline-none text-center font-mono text-lg">
+          </div>
+          <button type="button" onclick="verifyOTP(event, 'SEWA', 'ret_email', 'ret_otp')" class="w-full py-3 bg-green-600 text-white font-bold rounded-xl shadow hover:bg-green-700 transition">🔄 Verifikasi & Buka Loker</button>
+          <div class="text-center">
+            <button type="button" onclick="resetReturnView()" class="text-xs text-blue-600 font-semibold underline">← Ganti Metode Pengembalian</button>
+          </div>
         </div>
       </div>
-      <button type="submit" class="w-full py-3 bg-blue-600 text-white font-bold rounded-xl shadow hover:bg-blue-700 transition">💳 Bayar & Buka Loker</button>
-    </form>
 
-    <!-- 2. FORM KEMBALIKAN PAYUNG SEWA -->
-    <div id="form-return" class="space-y-4 hidden">
-      <div id="return-options" class="space-y-3">
-        <p class="text-xs font-bold text-slate-600 uppercase text-center">Pilih Metode Pengembalian</p>
-        <div class="grid grid-cols-2 gap-3">
-          <button type="button" onclick="selectReturnMethod('rfid')" class="p-4 border-2 border-slate-200 rounded-xl hover:border-blue-500 hover:bg-blue-50 flex flex-col items-center text-center transition">
-            <span class="text-2xl mb-1">🏷️</span>
-            <span class="font-bold text-xs text-slate-700">Scan Stiker RFID</span>
-            <span class="text-[10px] text-slate-400">Tempelkan stiker payung ke scanner</span>
-          </button>
-          <button type="button" onclick="selectReturnMethod('email')" class="p-4 border-2 border-slate-200 rounded-xl hover:border-blue-500 hover:bg-blue-50 flex flex-col items-center text-center transition">
-            <span class="text-2xl mb-1">✉️</span>
-            <span class="font-bold text-xs text-slate-700">Kode OTP Email</span>
-            <span class="text-[10px] text-slate-400">Verifikasi dengan email terdaftar</span>
-          </button>
-        </div>
-      </div>
-
-      <div id="return-rfid-view" class="space-y-4 hidden text-center p-4 bg-slate-50 border rounded-xl">
-        <div class="animate-pulse text-4xl mb-2">📡</div>
-        <h3 class="font-bold text-slate-800 text-sm">Silakan Scan Stiker RFID</h3>
-        <p class="text-xs text-slate-500">Tempelkan stiker RFID yang berada di payung ke alat scanner fisik loker.</p>
-        <button type="button" onclick="resetReturnView()" class="mt-2 text-xs text-blue-600 font-semibold underline">← Kembali ke Pilihan</button>
-      </div>
-
-      <div id="return-email-view" class="space-y-4 hidden">
+      <!-- 3. FORM AMBIL PAYUNG TITIPAN -->
+      <div id="form-retrieve" class="hidden space-y-4">
+        <h2 class="text-xl font-bold text-slate-800">Ambil Payung Titipan</h2>
+        
         <div>
           <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Email Terdaftar</label>
-          <input type="email" id="ret_email" required class="w-full p-2.5 bg-slate-50 border rounded-lg text-sm outline-none">
+          <div class="flex gap-2 mt-1">
+            <input type="email" id="retrieve-email" class="w-full p-2.5 bg-slate-50 border rounded-lg text-sm outline-none" placeholder="nama@email.com" required>
+            <button type="button" onclick="requestOTP(event, 'TITIP', 'retrieve-email')" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 whitespace-nowrap">
+              Kirim OTP
+            </button>
+          </div>
         </div>
-        <button type="button" onclick="requestOTP(event, 'SEWA', 'ret_email')" class="w-full py-2.5 bg-slate-800 text-white font-bold rounded-lg text-xs hover:bg-slate-900 transition">📩 Kirim Kode OTP Verifikasi</button>
-        
+
         <div class="border-t pt-3">
-          <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Masukkan Kode OTP</label>
-          <input type="text" id="ret_otp" maxlength="4" placeholder="4 Digit OTP" class="w-full p-2.5 bg-slate-50 border rounded-lg text-sm outline-none text-center font-mono text-lg">
+          <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Kode OTP Verifikasi</label>
+          <input type="text" id="retrieve-otp" class="w-full p-2.5 bg-slate-50 border rounded-lg text-sm outline-none text-center font-mono text-lg" placeholder="4 Digit OTP" maxlength="4">
         </div>
-        <button type="button" onclick="verifyOTP(event, 'SEWA', 'ret_email', 'ret_otp')" class="w-full py-3 bg-green-600 text-white font-bold rounded-xl shadow hover:bg-green-700 transition">🔄 Verifikasi & Buka Loker</button>
-        <div class="text-center">
-          <button type="button" onclick="resetReturnView()" class="text-xs text-blue-600 font-semibold underline">← Ganti Metode Pengembalian</button>
-        </div>
-      </div>
-    </div>
 
-    <!-- 3. FORM AMBIL PAYUNG TITIPAN (LENGKAP!) -->
-    <div id="form-retrieve" class="hidden space-y-4">
-      <h2 class="text-xl font-bold text-slate-800">Ambil Payung Titipan</h2>
-      
-      <div>
-        <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Email Terdaftar</label>
-        <div class="flex gap-2 mt-1">
-          <input type="email" id="retrieve-email" class="w-full p-2.5 bg-slate-50 border rounded-lg text-sm outline-none" placeholder="nama@email.com" required>
-          <button type="button" onclick="requestOTP(event, 'TITIP', 'retrieve-email')" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 whitespace-nowrap">
-            Kirim OTP
-          </button>
-        </div>
+        <button type="button" onclick="verifyOTP(event, 'TITIP', 'retrieve-email', 'retrieve-otp')" class="w-full py-3 bg-green-600 text-white font-bold rounded-xl shadow hover:bg-green-700 transition">
+          Verifikasi & Buka Loker
+        </button>
       </div>
-
-      <div class="border-t pt-3">
-        <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Kode OTP Verifikasi</label>
-        <input type="text" id="retrieve-otp" class="w-full p-2.5 bg-slate-50 border rounded-lg text-sm outline-none text-center font-mono text-lg" placeholder="4 Digit OTP" maxlength="4">
-      </div>
-
-      <button type="button" onclick="verifyOTP(event, 'TITIP', 'retrieve-email', 'retrieve-otp')" class="w-full py-3 bg-green-600 text-white font-bold rounded-xl shadow hover:bg-green-700 transition">
-        Verifikasi & Buka Loker
-      </button>
     </div>
 
     <!-- BOX STATUS NOTIFIKASI -->
     <div id="status-box" class="mt-4 p-3 rounded-xl hidden text-sm font-semibold whitespace-pre-line"></div>
+  </div>
+
+  <!-- MODAL PROSES PEMBAYARAN & STRUK POTONG SALDO -->
+  <div id="payment-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm hidden items-center justify-center p-4 z-50">
+    <div class="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl border border-slate-200 text-center space-y-4">
+      <div id="payment-loading" class="space-y-3 py-4">
+        <div class="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto"></div>
+        <h3 class="font-bold text-slate-800 text-base">Memproses Pembayaran...</h3>
+        <p id="payment-loading-desc" class="text-xs text-slate-500">Menghubungkan ke gateway GoPay & memotong saldo...</p>
+      </div>
+
+      <div id="payment-receipt" class="hidden space-y-4 text-left">
+        <div class="text-center">
+          <div class="w-12 h-12 bg-green-100 text-green-600 rounded-full flex items-center justify-center text-2xl mx-auto mb-2">✅</div>
+          <h3 class="font-bold text-slate-800 text-lg">Saldo Berhasil Terpotong!</h3>
+          <p id="receipt-slot-info" class="text-xs font-bold text-blue-600 mt-0.5">Pintu Loker SEWA_1 Terbuka</p>
+        </div>
+
+        <div class="bg-slate-50 border border-dashed border-slate-300 rounded-xl p-3.5 space-y-2 text-xs">
+          <div class="flex justify-between">
+            <span class="text-slate-500">Nama Pengguna</span>
+            <span id="rec-nama" class="font-bold text-slate-800">-</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-slate-500">Sumber Dana</span>
+            <span id="rec-method" class="font-bold text-slate-800">-</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-slate-500">Biaya Layanan</span>
+            <span id="rec-biaya" class="font-semibold text-slate-700">-</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-slate-500">Deposit Jaminan</span>
+            <span id="rec-deposit" class="font-semibold text-slate-700">-</span>
+          </div>
+          <div class="flex justify-between border-t border-slate-200 pt-2 text-sm font-bold">
+            <span class="text-slate-800">Total Terpotong</span>
+            <span id="rec-total" class="text-red-600">-</span>
+          </div>
+        </div>
+
+        <p class="text-[11px] text-slate-500 text-center">Silakan ambil/masukkan payung lalu tutup kembali pintu loker dengan rapat.</p>
+
+        <button type="button" onclick="closePaymentModal()" class="w-full py-2.5 bg-slate-800 text-white font-bold rounded-xl text-sm hover:bg-slate-900 transition">
+          Selesai & Tutup Struk
+        </button>
+      </div>
+    </div>
   </div>
 
   <!-- FOOTER CUSTOMER SERVICE -->
