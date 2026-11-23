@@ -8,8 +8,8 @@
 #include <MFRC522.h>
 
 // --- KONFIGURASI WIFI & MQTT ---
-const char *ssid = "UPNYK-Mahasiswa";
-const char *password = "mhs2021*#";
+const char *ssid = "";
+const char *password = "";
 const char *mqtt_server = "broker.hivemq.com";
 const int mqtt_port = 1883;
 
@@ -388,7 +388,7 @@ void loop()
 void kirimStatusIR()
 {
   static unsigned long lastCheck = 0;
-  if (millis() - lastCheck > 2000)
+  if (millis() - lastCheck >= 1000) // Cek tiap 1 detik agar responsif
   {
     lastCheck = millis();
     int ir1 = (digitalRead(IR_1) == LOW) ? 1 : 0;
@@ -400,10 +400,15 @@ void kirimStatusIR()
     if (currentIR != lastIRStatus)
     {
       lastIRStatus = currentIR;
-      client.publish(topicStatus, currentIR.c_str());
+      if (client.connected()) {
+        client.publish(topicStatus, currentIR.c_str(), true); // retained = true
+      }s
       Serial.println("Update IR: " + currentIR);
-      if (!pintuTerbuka && !sistemAktifNFC && !webInteraksiAktif)
+
+      // Langsung update OLED jika pintu tidak sedang terbuka
+      if (!pintuTerbuka && !sistemAktifNFC)
       {
+        webInteraksiAktif = false;
         tampilkanIdle();
       }
     }
