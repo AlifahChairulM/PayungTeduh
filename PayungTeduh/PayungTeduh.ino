@@ -8,8 +8,8 @@
 #include <MFRC522.h>
 
 // --- KONFIGURASI WIFI & MQTT ---
-const char *ssid = "Entitas comel";
-const char *password = "hi i here";
+const char *ssid = "";
+const char *password = "";
 const char *mqtt_server = "broker.hivemq.com";
 const int mqtt_port = 1883;
 
