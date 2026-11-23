@@ -8,7 +8,7 @@ const { createClient } = require("@supabase/supabase-js");
 const app = express();
 app.use(cors());
 app.use(express.json());
-app.use(express.static(path.join(__dirname)));
+app.use(express.static(path.join(__dirname, "web")));
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -32,28 +32,28 @@ async function calculateLiveAvailability() {
   const irSewa = (irState.ir1 === 1 ? 1 : 0) + (irState.ir2 === 1 ? 1 : 0);
   const irTitip = (irState.ir4 === 0 ? 1 : 0) + (irState.ir5 === 0 ? 1 : 0);
 
+  // Jika ESP32 sudah terhubung dan mengirim data IR, tampilkan kondisi fisik real-time
+  if (irConnected) {
+    return { sewaTersedia: irSewa, titipKosong: irTitip, irConnected: true };
+  }
+
+  // Fallback dari database hanya jika ESP32 belum terhubung
   try {
     const { data: activeTx } = await supabase
       .from("transactions")
       .select("type")
       .eq("status_transaksi", "ACTIVE");
 
-    const activeSewaCount = (activeTx || []).filter(
-      (t) => t.type === "SEWA",
-    ).length;
-    const activeTitipCount = (activeTx || []).filter(
-      (t) => t.type === "TITIP",
-    ).length;
+    const activeSewaCount = (activeTx || []).filter((t) => t.type === "SEWA").length;
+    const activeTitipCount = (activeTx || []).filter((t) => t.type === "TITIP").length;
 
-    const dbSewa = Math.max(0, 2 - activeSewaCount);
-    const dbTitip = Math.max(0, 2 - activeTitipCount);
-
-    const sewaTersedia = irConnected ? Math.min(irSewa, dbSewa) : dbSewa;
-    const titipKosong = irConnected ? Math.min(irTitip, dbTitip) : dbTitip;
-
-    return { sewaTersedia, titipKosong, irConnected };
+    return {
+      sewaTersedia: Math.max(0, 2 - activeSewaCount),
+      titipKosong: Math.max(0, 2 - activeTitipCount),
+      irConnected: false,
+    };
   } catch (err) {
-    return { sewaTersedia: irSewa, titipKosong: irTitip, irConnected };
+    return { sewaTersedia: irSewa, titipKosong: irTitip, irConnected: false };
   }
 }
 
