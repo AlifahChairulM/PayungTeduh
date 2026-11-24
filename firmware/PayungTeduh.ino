@@ -1,13 +1,20 @@
+// Pustaka koneksi Wi-Fi dan komunikasi protokol MQTT
 #include <WiFi.h>
 #include <PubSubClient.h>
+
+// Pustaka komunikasi I2C dan tampilan layar OLED SSD1306
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
+
+// Pustaka kontrol motor servo SG90 pada ESP32
 #include <ESP32Servo.h>
+
+// Pustaka komunikasi SPI dan modul pembaca kartu/stiker RFID MFRC522
 #include <SPI.h>
 #include <MFRC522.h>
 
-// --- KONFIGURASI WIFI & MQTT ---
+// Konfigurasi WiFi dan MQTT
 const char *ssid = "";
 const char *password = "";
 const char *mqtt_server = "broker.hivemq.com";
@@ -19,7 +26,6 @@ PubSubClient client(espClient);
 const char *topicCommand = "umbllocker/command";
 const char *topicStatus = "umbllocker/status";
 
-// --- DEFINISI PIN ---
 #define OLED_SDA 21
 #define OLED_SCL 22
 #define SCREEN_WIDTH 128
@@ -49,17 +55,14 @@ Servo servo1, servo2, servo4, servo5;
 #define IR_4 36
 #define IR_5 39
 
-// Status Sistem Sesi NFC
 bool sistemAktifNFC = false;
 unsigned long waktuAktifNFC = 0;
 const unsigned long TIMEOUT_SESI_NFC = 60000;
 
-// Status Interaksi Web di OLED
 bool webInteraksiAktif = false;
 unsigned long waktuWebInteraksi = 0;
 const unsigned long TIMEOUT_WEB_INTERAKSI = 90000;
 
-// Status Pintu & Jenis Aksi Aktif
 bool pintuTerbuka = false;
 int slotAktif = 0;
 String namaSlotAktif = "";
@@ -73,6 +76,7 @@ const unsigned long JEDA_KUNCI = 5000;
 
 String lastIRStatus = "";
 
+// Deklarasi prototipe seluruh fungsi yang digunakan dalam program
 void callback(char *topic, byte *payload, unsigned int length);
 void reconnectMQTT();
 void prosesBukaPintu(int slot, String slotName, String actionMode);
@@ -87,21 +91,25 @@ void kirimStatusIR();
 
 void setup()
 {
+  // Memulai komunikasi serial untuk debugging di Serial Monitor
   Serial.begin(115200);
 
+  // Inisialisasi komunikasi I2C dan layar OLED pada alamat 0x3C
   Wire.begin(OLED_SDA, OLED_SCL);
   if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C))
   {
     for (;;)
-      ;
+      ;  // Hentikan program jika layar OLED gagal terdeteksi
   }
   display.clearDisplay();
   display.setTextSize(1);
   display.setTextColor(WHITE);
 
+  // Inisialisasi bus SPI dan modul RFID/NFC RC522
   SPI.begin();
   rfid.PCD_Init();
 
+  // Konfigurasi mode pin input untuk tombol, limit switch, sensor IR, dan output buzzer
   pinMode(BUTTON_PIN, INPUT_PULLUP);
   pinMode(BUZZER_PIN, OUTPUT);
   pinMode(LIMIT_SW_1, INPUT_PULLUP);
@@ -114,6 +122,7 @@ void setup()
   pinMode(IR_4, INPUT);
   pinMode(IR_5, INPUT);
 
+  // Hubungkan keempat motor servo ke pin GPIO dan posisikan terkunci (0 derajat)
   servo1.attach(SERVO_1_PIN);
   servo2.attach(SERVO_2_PIN);
   servo4.attach(SERVO_4_PIN);
@@ -123,11 +132,13 @@ void setup()
   servo4.write(0);
   servo5.write(0);
 
+  // Tampilkan status koneksi Wi-Fi pada layar OLED
   display.clearDisplay();
   display.setCursor(0, 20);
   display.print("Menghubungkan WiFi...");
   display.display();
 
+  // Mulai proses koneksi ke jaringan Wi-Fi hingga berhasil terhubung
   WiFi.begin(ssid, password);
   while (WiFi.status() != WL_CONNECTED)
   {
@@ -135,10 +146,12 @@ void setup()
     Serial.print(".");
   }
 
+  // Konfigurasi alamat broker MQTT dan fungsi penerima pesan (callback)
   Serial.println("\nWiFi Terhubung!");
   client.setServer(mqtt_server, mqtt_port);
   client.setCallback(callback);
 
+  // Tampilkan layar awal (Idle) setelah sistem siap
   tampilkanIdle();
 }
 
@@ -152,7 +165,6 @@ void loop()
 
   kirimStatusIR();
 
-  // 1. Cek Tombol Push Button -> Aktifkan Mode Tunggu Tap HP NFC
   if (digitalRead(BUTTON_PIN) == LOW && !pintuTerbuka)
   {
     delay(50);
@@ -170,7 +182,6 @@ void loop()
     }
   }
 
-  // 1B. Hitung Mundur Mode Tunggu Tap HP NFC
   if (sistemAktifNFC && !pintuTerbuka)
   {
     unsigned long elapsed = millis() - waktuAktifNFC;
@@ -191,7 +202,6 @@ void loop()
     }
   }
 
-  // 1C. Timeout Interaksi Web (kembali ke Idle jika 90 detik tanpa aktivitas)
   if (webInteraksiAktif && !pintuTerbuka && !sistemAktifNFC)
   {
     if (millis() - waktuWebInteraksi > TIMEOUT_WEB_INTERAKSI)
@@ -201,7 +211,6 @@ void loop()
     }
   }
 
-  // 2. Timer & Instruksi Dinamis Saat Pintu Terbuka
   if (pintuTerbuka && !pintuSedangDitutup)
   {
     unsigned long elapsed = millis() - waktuBuka;
@@ -220,7 +229,6 @@ void loop()
     }
   }
 
-  // 3. Logika Limit Switch & Jeda 5 Detik Saat Pintu Ditutup
   if (pintuTerbuka)
   {
     bool sensorTertutup = false;
@@ -237,7 +245,6 @@ void loop()
     }
   }
 
-  // 4. Hitung Mundur Penguncian 5 Detik & Eksekusi Kunci
   if (pintuSedangDitutup)
   {
     unsigned long elapsedClose = millis() - waktuTutup;
@@ -284,9 +291,9 @@ void loop()
     }
   }
 
-  // 5. Cek Pembacaan RC522 (Stiker Payung ATAU Tap HP NFC)
   if (rfid.PICC_IsNewCardPresent() && rfid.PICC_ReadCardSerial())
   {
+    // Konversi array byte UID kartu/NFC menjadi string heksadesimal
     String uid = "";
     for (byte i = 0; i < rfid.uid.size; i++)
     {
@@ -298,7 +305,6 @@ void loop()
     }
     uid.toUpperCase();
 
-    // A. Stiker RFID Payung Sewa (Pengembalian Langsung)
     if (uid == "61 F7 28 B5" || uid == "51 B0 25 B5")
     {
       sistemAktifNFC = false;
@@ -348,7 +354,6 @@ void loop()
         tampilkanIdle();
       }
     }
-    // B. Tap HP NFC Setelah Push Button Ditekan
     else if (sistemAktifNFC)
     {
       sistemAktifNFC = false;
@@ -360,7 +365,6 @@ void loop()
 
       tampilkanStatusWeb("NFC HP TERDETEKSI", "Web terbuka di HP.", "Pilih layanan Anda.");
     }
-    // C. Tap Tanpa Push Button
     else
     {
       bunyikanBuzzer(2, 100);
@@ -379,30 +383,34 @@ void loop()
       tampilkanIdle();
     }
 
+    // Hentikan komunikasi dengan kartu/NFC saat ini agar siap membaca kartu berikutnya
     rfid.PICC_HaltA();
     rfid.PCD_StopCrypto1();
     delay(800);
   }
 }
 
+// Membaca status keempat sensor IR setiap 1 detik dan mengirimkannya ke broker MQTT jika berubah
 void kirimStatusIR()
 {
   static unsigned long lastCheck = 0;
-  if (millis() - lastCheck >= 1000) // Cek tiap 1 detik agar responsif
+  if (millis() - lastCheck >= 1000) 
   {
     lastCheck = millis();
+    // Sensor IR bersifat Active-LOW: LOW (0) berarti objek payung terdeteksi (nilai 1)
     int ir1 = (digitalRead(IR_1) == LOW) ? 1 : 0;
     int ir2 = (digitalRead(IR_2) == LOW) ? 1 : 0;
     int ir4 = (digitalRead(IR_4) == LOW) ? 1 : 0;
     int ir5 = (digitalRead(IR_5) == LOW) ? 1 : 0;
 
+    // Kirim payload status IR hanya ketika terjadi perubahan kondisi fisik
     String currentIR = "IR_STATE:" + String(ir1) + "," + String(ir2) + "," + String(ir4) + "," + String(ir5);
     if (currentIR != lastIRStatus)
     {
       lastIRStatus = currentIR;
       if (client.connected()) {
-        client.publish(topicStatus, currentIR.c_str(), true); // retained = true
-      }s
+        client.publish(topicStatus, currentIR.c_str(), true); 
+      }
       Serial.println("Update IR: " + currentIR);
 
       // Langsung update OLED jika pintu tidak sedang terbuka
@@ -415,6 +423,7 @@ void kirimStatusIR()
   }
 }
 
+// Fungsi callback untuk memproses perintah masuk dari server melalui topik MQTT "umbllocker/command"
 void callback(char *topic, byte *payload, unsigned int length)
 {
   String pesan = "";
@@ -424,7 +433,6 @@ void callback(char *topic, byte *payload, unsigned int length)
   }
   Serial.println("Pesan MQTT Diterima: " + pesan);
 
-  // 1. Pesan Status Interaksi Web (OLED:...)
   if (pesan.startsWith("OLED:"))
   {
     String st = pesan.substring(5);
@@ -455,7 +463,6 @@ void callback(char *topic, byte *payload, unsigned int length)
     return;
   }
 
-  // 2. Perintah Buka Pintu Baru: UNLOCK:<SLOT>:<ACTION>
   if (pesan.startsWith("UNLOCK:"))
   {
     int firstColon = pesan.indexOf(':');
@@ -476,23 +483,24 @@ void callback(char *topic, byte *payload, unsigned int length)
     return;
   }
 
-  // 3. Fallback format lama (UNLOCK_SEWA_1, dll.)
   if (pesan == "UNLOCK_SEWA_1") prosesBukaPintu(1, "SEWA_1", "SEWA");
   else if (pesan == "UNLOCK_SEWA_2") prosesBukaPintu(2, "SEWA_2", "SEWA");
   else if (pesan == "UNLOCK_TITIP_1") prosesBukaPintu(4, "TITIP_1", "TITIP");
   else if (pesan == "UNLOCK_TITIP_2") prosesBukaPintu(5, "TITIP_2", "TITIP");
 }
 
+// Menghubungkan ulang ESP32 ke broker MQTT secara otomatis jika koneksi terputus
 void reconnectMQTT()
 {
   while (!client.connected())
   {
+    // Buat Client ID acak agar tidak bentrok dengan perangkat lain di broker publik
     String clientId = "ESP32PayungTeduh-";
     clientId += String(random(0xffff), HEX);
     if (client.connect(clientId.c_str()))
     {
-      client.subscribe(topicCommand);
-      kirimStatusIR();
+      client.subscribe(topicCommand);  // Berlangganan topik perintah dari server
+      kirimStatusIR();                 // Kirim status sensor IR terbaru segera setelah terhubung
     }
     else
     {
@@ -501,10 +509,12 @@ void reconnectMQTT()
   }
 }
 
+// Memvalidasi kesesuaian sensor IR fisik sebelum menggerakkan servo untuk membuka pintu loker
 void prosesBukaPintu(int slot, String slotName, String actionMode)
 {
   bool kondisiFisikOK = false;
 
+  // Pastikan kondisi fisik slot sesuai: SEWA/RETRIEVE wajib ada payung (LOW), RETURN/TITIP wajib kosong (HIGH)
   if (actionMode == "SEWA")
   {
     if (slot == 1 && digitalRead(IR_1) == LOW) kondisiFisikOK = true;
@@ -534,7 +544,6 @@ void prosesBukaPintu(int slot, String slotName, String actionMode)
     namaSlotAktif = slotName;
     aksiAktif = actionMode;
 
-    // PENGUMUMAN LOKER SEBELUM PINTU TERBUKA (2.5 DETIK)
     bunyikanBuzzer(2, 120);
     display.clearDisplay();
     display.setCursor(0, 4);
@@ -549,7 +558,6 @@ void prosesBukaPintu(int slot, String slotName, String actionMode)
     display.display();
     delay(2500);
 
-    // BUKA SERVO
     if (slot == 1) servo1.write(90);
     if (slot == 2) servo2.write(90);
     if (slot == 4) servo4.write(90);
@@ -580,6 +588,7 @@ void prosesBukaPintu(int slot, String slotName, String actionMode)
   }
 }
 
+// Menutup dan mengunci pintu secara otomatis ketika batas waktu 60 detik terlewati
 void tutupPintuOtomatis()
 {
   kunciPintu(slotAktif);
@@ -602,6 +611,7 @@ void tutupPintuOtomatis()
   client.publish(topicStatus, "DOOR_TIMEOUT");
 }
 
+// Mengembalikan sudut motor servo slot terkait ke 0 derajat untuk mengunci pintu loker
 void kunciPintu(int slot)
 {
   if (slot == 1) servo1.write(0);
@@ -613,6 +623,7 @@ void kunciPintu(int slot)
   Serial.println("Loker Slot " + String(slot) + " Dikunci ke 0 derajat.");
 }
 
+// Menampilkan layar utama (Idle) berisi stok payung sewa, slot titip kosong, dan panduan aktivasi
 void tampilkanIdle()
 {
   int stokSewa = (digitalRead(IR_1) == LOW ? 1 : 0) + (digitalRead(IR_2) == LOW ? 1 : 0);
@@ -639,6 +650,7 @@ void tampilkanIdle()
   display.display();
 }
 
+// Menampilkan layar hitung mundur saat sistem aktif menunggu pengguna menempelkan HP NFC
 void tampilkanTungguNFC(unsigned long sisaDetik)
 {
   display.clearDisplay();
@@ -656,6 +668,7 @@ void tampilkanTungguNFC(unsigned long sisaDetik)
   display.display();
 }
 
+// Menampilkan informasi status aktivitas pengguna yang sedang berlangsung di aplikasi web
 void tampilkanStatusWeb(String judul, String baris1, String baris2)
 {
   webInteraksiAktif = true;
@@ -674,6 +687,7 @@ void tampilkanStatusWeb(String judul, String baris1, String baris2)
   display.display();
 }
 
+// Menampilkan instruksi aksi (ambil/taruh payung) beserta sisa waktu pintu terbuka pada OLED
 void tampilkanInstruksiPintu(unsigned long sisaDetik)
 {
   String instruksi1 = "";
@@ -714,6 +728,7 @@ void tampilkanInstruksiPintu(unsigned long sisaDetik)
   display.display();
 }
 
+// Membunyikan active buzzer sebanyak jumlah dan durasi milidetik yang ditentukan
 void bunyikanBuzzer(int jumlah, int durasi)
 {
   for (int i = 0; i < jumlah; i++)
