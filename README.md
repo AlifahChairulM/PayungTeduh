@@ -1,6 +1,6 @@
 # PayungTeduh — Sistem Loker Payung Otomatis Berbasis IoT
 
-**Tema Proyek:** Smart Locker & Campus Utility Berbasis Internet of Things (IoT)
+**Tema Proyek:** Smart Umbrella Sharing Locker
 
 ## Gambaran Umum Proyek
 
