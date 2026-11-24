@@ -88,7 +88,7 @@ cd nama-repositori-anda
 ```
 
 ### 2. Menyiapkan Basis Data di Supabase
-Buat proyek baru di [Supabase](https://supabase.com/), kemudian buka menu **SQL Editor** dan jalankan skrip SQL berikut untuk membentuk keempat tabel utama, mengisi data awal 4 slot loker, serta menonaktifkan *Row Level Security* (RLS) agar server Express dapat melakukan operasi pembaruan dan penghapusan data secara penuh:
+Buat proyek baru di [Supabase](https://supabase.com/), kemudian buka menu **SQL Editor** dan jalankan skrip SQL berikut untuk membentuk ketujuh tabel utama, mengisi data awal 4 slot loker, serta menonaktifkan *Row Level Security* (RLS) agar server Express dapat melakukan operasi pembaruan dan penghapusan data secara penuh:
 
 ```sql
 -- 1. Tabel Pengguna
@@ -208,6 +208,7 @@ Karena berkas `.env` dikecualikan dari repositori demi keamanan kredensial, buat
 ```env
 SUPABASE_URL=[https://xxxxxxxxxxxx.supabase.co]
 SUPABASE_KEY=[publishable_key]
+ADMIN_PASSWORD=admin123
 PORT=3000
 ```
 
@@ -222,7 +223,7 @@ npm start
 Apabila konfigurasi berhasil, terminal akan menampilkan konfirmasi bahwa server Express telah berjalan dan terhubung ke broker MQTT HiveMQ:
 
 ```text
-🚀 Server PayungTeduh Running on [http://0.0.0.0:3000](http://0.0.0.0:3000)
+🚀 Server PayungTeduh Running on [http://0.0.0.0:3000]
 ✅ Connected to HiveMQ Broker!
 ```
 
