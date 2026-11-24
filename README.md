@@ -83,7 +83,7 @@ Ikuti tahapan berurutan di bawah ini untuk menyalin repositori, menyiapkan basis
 Salin proyek ini ke komputer lokal Anda menggunakan perintah Git berikut:
 
 ```bash
-git clone [https://github.com/Bylbiss/nama-repositori-anda.git](https://github.com/Bylbiss/nama-repositori-anda.git)
+git clone [https://github.com/username/nama-repositori.git]
 cd nama-repositori-anda
 ```
 
