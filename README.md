@@ -91,70 +91,123 @@ cd nama-repositori-anda
 Buat proyek baru di [Supabase](https://supabase.com/), kemudian buka menu **SQL Editor** dan jalankan skrip SQL berikut untuk membentuk keempat tabel utama, mengisi data awal 4 slot loker, serta menonaktifkan *Row Level Security* (RLS) agar server Express dapat melakukan operasi pembaruan dan penghapusan data secara penuh:
 
 ```sql
--- 1. Tabel Data Pengguna
-CREATE TABLE users (
-  id SERIAL PRIMARY KEY,
-  nama_lengkap TEXT NOT NULL,
-  email TEXT NOT NULL,
-  bank_wallet TEXT NOT NULL,
-  nomor_rekening TEXT NOT NULL,
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
+-- 1. Tabel Pengguna
+CREATE TABLE public.users (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  nama_lengkap character varying(100) NOT NULL,
+  email character varying(100) NOT NULL,
+  bank_wallet character varying(50) NOT NULL,
+  nomor_rekening character varying(50) NOT NULL,
+  created_at timestamp with time zone NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT users_pkey PRIMARY KEY (id)
+) TABLESPACE pg_default;
 
 -- 2. Tabel Master Slot Loker
-CREATE TABLE lockers (
-  id SERIAL PRIMARY KEY,
-  slot_name TEXT UNIQUE NOT NULL,
-  category TEXT NOT NULL,
-  is_occupied BOOLEAN DEFAULT FALSE,
-  last_status_change TIMESTAMPTZ DEFAULT NOW()
-);
+CREATE TABLE public.lockers (
+  id serial NOT NULL,
+  slot_name character varying(30) NOT NULL,
+  category character varying(20) NOT NULL,
+  position_order integer NOT NULL,
+  is_occupied boolean NULL DEFAULT false,
+  last_status_change timestamp with time zone NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT lockers_pkey PRIMARY KEY (id),
+  CONSTRAINT lockers_slot_name_key UNIQUE (slot_name)
+) TABLESPACE pg_default;
 
--- 3. Tabel Riwayat & Status Transaksi
-CREATE TABLE transactions (
-  id SERIAL PRIMARY KEY,
-  user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-  locker_id INTEGER REFERENCES lockers(id),
-  type TEXT NOT NULL,
-  biaya_layanan INTEGER NOT NULL,
-  deposit_jaminan INTEGER NOT NULL,
-  total_bayar INTEGER NOT NULL,
-  waktu_tenggat TIMESTAMPTZ NOT NULL,
-  waktu_kembali TIMESTAMPTZ,
-  status_transaksi TEXT DEFAULT 'ACTIVE',
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
+-- 3. Tabel Master Payung RFID
+CREATE TABLE public.umbrellas (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  rfid_uid character varying(50) NULL,
+  owner_type character varying(20) NOT NULL,
+  status character varying(20) NULL DEFAULT 'IN_LOCKER'::character varying,
+  created_at timestamp with time zone NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT umbrellas_pkey PRIMARY KEY (id),
+  CONSTRAINT umbrellas_rfid_uid_key UNIQUE (rfid_uid)
+) TABLESPACE pg_default;
 
--- 4. Tabel Kode OTP Verifikasi Sekali Pakai
-CREATE TABLE otp_codes (
-  id SERIAL PRIMARY KEY,
-  user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-  email TEXT NOT NULL,
-  otp_code TEXT NOT NULL,
-  expires_at TIMESTAMPTZ NOT NULL
-);
+-- 4. Tabel Perintah Perangkat
+CREATE TABLE public.device_commands (
+  id bigserial NOT NULL,
+  locker_id integer NULL,
+  action character varying(20) NOT NULL,
+  status character varying(20) NULL DEFAULT 'PENDING'::character varying,
+  created_at timestamp with time zone NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT device_commands_pkey PRIMARY KEY (id),
+  CONSTRAINT device_commands_locker_id_fkey FOREIGN KEY (locker_id) REFERENCES lockers (id) ON DELETE CASCADE
+) TABLESPACE pg_default;
 
--- 5. Inisialisasi Data Awal 4 Slot Loker
-INSERT INTO lockers (slot_name, category, is_occupied) VALUES
-  ('SEWA_1', 'SEWA', TRUE),
-  ('SEWA_2', 'SEWA', TRUE),
-  ('TITIP_1', 'TITIP', FALSE),
-  ('TITIP_2', 'TITIP', FALSE);
+-- 5. Tabel Kode OTP Verifikasi
+CREATE TABLE public.otp_codes (
+  id serial NOT NULL,
+  email character varying(255) NOT NULL,
+  otp_code character varying(6) NOT NULL,
+  created_at timestamp with time zone NULL DEFAULT now(),
+  expires_at timestamp with time zone NOT NULL,
+  user_id uuid NULL,
+  CONSTRAINT otp_codes_pkey PRIMARY KEY (id),
+  CONSTRAINT otp_codes_user_id_fkey FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+) TABLESPACE pg_default;
 
--- 6. Menonaktifkan RLS agar Operasi CRUD Backend Berjalan Lancar
-ALTER TABLE users DISABLE ROW LEVEL SECURITY;
-ALTER TABLE lockers DISABLE ROW LEVEL SECURITY;
-ALTER TABLE transactions DISABLE ROW LEVEL SECURITY;
-ALTER TABLE otp_codes DISABLE ROW LEVEL SECURITY;
+-- 6. Tabel Transaksi
+CREATE TABLE public.transactions (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid NULL,
+  umbrella_id uuid NULL,
+  locker_id integer NULL,
+  type character varying(20) NOT NULL,
+  biaya_layanan numeric(10, 2) NOT NULL,
+  deposit_jaminan numeric(10, 2) NOT NULL,
+  total_bayar numeric(10, 2) NOT NULL,
+  payment_status character varying(20) NULL DEFAULT 'PAID'::character varying,
+  status_transaksi character varying(20) NULL DEFAULT 'ACTIVE'::character varying,
+  waktu_mulai timestamp with time zone NULL DEFAULT CURRENT_TIMESTAMP,
+  waktu_tenggat timestamp with time zone NOT NULL,
+  waktu_selesai timestamp with time zone NULL,
+  refund_amount numeric(10, 2) NULL DEFAULT 0.00,
+  created_at timestamp with time zone NULL DEFAULT CURRENT_TIMESTAMP,
+  waktu_kembali timestamp with time zone NULL,
+  CONSTRAINT transactions_pkey PRIMARY KEY (id),
+  CONSTRAINT transactions_locker_id_fkey FOREIGN KEY (locker_id) REFERENCES lockers (id) ON DELETE SET NULL,
+  CONSTRAINT transactions_umbrella_id_fkey FOREIGN KEY (umbrella_id) REFERENCES umbrellas (id) ON DELETE SET NULL,
+  CONSTRAINT transactions_user_id_fkey FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+) TABLESPACE pg_default;
+
+-- 7. Tabel Log Pengembalian Dana
+CREATE TABLE public.refund_logs (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  transaction_id uuid NULL,
+  bank_wallet character varying(50) NOT NULL,
+  nomor_rekening character varying(50) NOT NULL,
+  jumlah_refund numeric(10, 2) NOT NULL,
+  status_transfer character varying(20) NULL DEFAULT 'SUCCESS'::character varying,
+  created_at timestamp with time zone NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT refund_logs_pkey PRIMARY KEY (id),
+  CONSTRAINT refund_logs_transaction_id_fkey FOREIGN KEY (transaction_id) REFERENCES transactions (id) ON DELETE CASCADE
+) TABLESPACE pg_default;
+
+-- Isi 4 slot loker default
+INSERT INTO public.lockers (slot_name, category, position_order, is_occupied) VALUES
+  ('SEWA_1', 'SEWA', 1, TRUE),
+  ('SEWA_2', 'SEWA', 2, TRUE),
+  ('TITIP_1', 'TITIP', 3, FALSE),
+  ('TITIP_2', 'TITIP', 4, FALSE);
+
+-- Nonaktifkan RLS agar operasi CRUD dari server.js berjalan tanpa hambatan
+ALTER TABLE public.users DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.lockers DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.umbrellas DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.device_commands DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.otp_codes DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.transactions DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.refund_logs DISABLE ROW LEVEL SECURITY;
 ```
 
 ### 3. Mengonfigurasi Variabel Lingkungan (`.env`)
 Karena berkas `.env` dikecualikan dari repositori demi keamanan kredensial, buatlah berkas baru bernama `.env` pada direktori utama proyek dan isi parameter berikut sesuai kredensial proyek Supabase Anda (**Project Settings $\rightarrow$ API**):
 
 ```env
-SUPABASE_URL=[https://xxxxxxxxxxxx.supabase.co](https://xxxxxxxxxxxx.supabase.co)
-SUPABASE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
-ADMIN_PASSWORD=infonekak
+SUPABASE_URL=[https://xxxxxxxxxxxx.supabase.co]
+SUPABASE_KEY=[publishable_key]
 PORT=3000
 ```
 
