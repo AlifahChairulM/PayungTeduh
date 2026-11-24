@@ -1,6 +1,23 @@
-/* Custom Stylesheet untuk PayungTeduh */
+/* Latar belakang gradasi langit mendung dengan lapisan kabut lembut */
+.bg-mendung {
+  background-color: #334155;
+  background-image:
+    radial-gradient(at 15% 15%, rgba(148, 163, 184, 0.28) 0px, transparent 55%),
+    radial-gradient(at 85% 20%, rgba(56, 189, 248, 0.14) 0px, transparent 50%),
+    radial-gradient(at 50% 90%, rgba(15, 23, 42, 0.45) 0px, transparent 60%),
+    linear-gradient(160deg, #1e293b 0%, #334155 42%, #475569 78%, #64748b 100%);
+  background-attachment: fixed;
+}
 
-/* Haluskan efek transisi pada tombol dan tab */
+/* Kartu utama bernuansa putih kabut (frosted mist) */
+.card-mendung {
+  background: rgba(248, 250, 252, 0.94);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(203, 213, 225, 0.85);
+}
+
+/* Haluskan efek transisi pada tombol, input, dan tab */
 button, input, select {
   transition: all 0.2s ease-in-out;
 }

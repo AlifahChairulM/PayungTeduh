@@ -139,8 +139,8 @@ function updatePricePreview() {
       ? '💳 Bayar & Sewa Payung'
       : '💳 Bayar & Titip Payung';
     submitBtn.className = isSewa
-      ? 'w-full py-3 bg-blue-600 text-white font-bold rounded-xl shadow hover:bg-blue-700 transition'
-      : 'w-full py-3 bg-green-600 text-white font-bold rounded-xl shadow hover:bg-green-700 transition';
+      ? 'w-full py-3 bg-sky-800 text-white font-bold rounded-xl shadow hover:bg-sky-900 transition'
+      : 'w-full py-3 bg-teal-700 text-white font-bold rounded-xl shadow hover:bg-teal-800 transition';
   }
 
   const mainApp = document.getElementById('main-app-content');
@@ -192,12 +192,12 @@ function switchTab(tab) {
   document.getElementById('form-return').classList.add('hidden');
   document.getElementById('form-retrieve').classList.add('hidden');
 
-  const inactiveClass = 'w-1/3 py-2 text-slate-500 hover:text-blue-600 transition-all';
+  const inactiveClass = 'w-1/3 py-2 text-slate-500 hover:text-sky-800 transition-all';
   document.getElementById('tab-new').className = inactiveClass;
   document.getElementById('tab-return').className = inactiveClass;
   document.getElementById('tab-retrieve').className = inactiveClass;
 
-  const activeClass = 'w-1/3 py-2 border-b-2 border-blue-600 text-blue-600 transition-all';
+  const activeClass = 'w-1/3 py-2 border-b-2 border-sky-700 text-sky-800 font-bold transition-all';
   if (tab === 'new') {
     document.getElementById('form-new').classList.remove('hidden');
     document.getElementById('tab-new').className = activeClass;
@@ -239,8 +239,15 @@ function resetReturnView() {
 
 function showStatus(msg, isSuccess) {
   const box = document.getElementById('status-box');
-  box.classList.remove('hidden', 'bg-green-100', 'text-green-700', 'bg-red-100', 'text-red-700');
-  box.classList.add(isSuccess ? 'bg-green-100' : 'bg-red-100', isSuccess ? 'text-green-700' : 'text-red-700');
+  box.classList.remove(
+    'hidden', 'bg-teal-50', 'text-teal-800', 'border-teal-200',
+    'bg-rose-50', 'text-rose-700', 'border-rose-200'
+  );
+  box.classList.add(
+    'border', isSuccess ? 'bg-teal-50' : 'bg-rose-50', 
+    isSuccess ? 'text-teal-800' : 'text-rose-700', 
+    isSuccess ? 'border-teal-200' : 'border-rose-200'
+  );
   box.innerText = (isSuccess ? '✅ ' : '❌ ') + msg;
 }
 
