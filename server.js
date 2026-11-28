@@ -1,9 +1,20 @@
 require("dotenv").config();
+const nodemailer = require("nodemailer");
 const express = require("express");
 const cors = require("cors");
 const path = require("path");
 const mqtt = require("mqtt");
 const { createClient } = require("@supabase/supabase-js");
+
+const mailTransporter = nodemailer.createTransport({
+  host: process.env.SMTP_HOST || "smtp.gmail.com",
+  port: Number(process.env.SMTP_PORT || 465),
+  secure: Number(process.env.SMTP_PORT || 465) === 465,
+  auth: {
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS,
+  },
+});
 
 const app = express();
 app.use(cors());
@@ -26,18 +37,29 @@ let activeNfcSession = {
   unlocked: false,
   uid: null,
   expiresAt: 0,
+  waitingRfidReturn: false,
 };
+
+function isNfcSessionValid() {
+  if (activeNfcSession.unlocked && Date.now() < activeNfcSession.expiresAt) {
+    return true;
+  }
+  activeNfcSession = { unlocked: false, uid: null, expiresAt: 0, waitingRfidReturn: false };
+  return false;
+}
+
+const activeTxEmails = new Set();
+const lockedSlots = new Set();
+const otpRequestCooldown = new Map();
 
 async function calculateLiveAvailability() {
   const irSewa = (irState.ir1 === 1 ? 1 : 0) + (irState.ir2 === 1 ? 1 : 0);
   const irTitip = (irState.ir4 === 0 ? 1 : 0) + (irState.ir5 === 0 ? 1 : 0);
 
-  // Jika ESP32 sudah terhubung dan mengirim data IR, tampilkan kondisi fisik real-time
   if (irConnected) {
     return { sewaTersedia: irSewa, titipKosong: irTitip, irConnected: true };
   }
 
-  // Fallback dari database hanya jika ESP32 belum terhubung
   try {
     const { data: activeTx } = await supabase
       .from("transactions")
@@ -90,6 +112,7 @@ mqttClient.on("message", async (topic, message) => {
       unlocked: true,
       uid,
       expiresAt: Date.now() + 5 * 60 * 1000,
+      waitingRfidReturn: false,
     };
     broadcastSSE({
       type: "NFC_UNLOCKED",
@@ -107,53 +130,76 @@ mqttClient.on("message", async (topic, message) => {
         .order("id", { ascending: false })
         .limit(1);
 
-      if (activeSewa && activeSewa.length > 0) {
-        const tx = activeSewa[0];
-        await supabase
-          .from("transactions")
-          .update({
-            status_transaksi: "COMPLETED",
-            waktu_kembali: new Date().toISOString(),
-          })
-          .eq("id", tx.id);
-        await supabase
-          .from("lockers")
-          .update({ is_occupied: true, last_status_change: new Date() })
-          .eq("id", tx.locker_id);
-        await supabase.from("otp_codes").delete().eq("user_id", tx.user_id);
-        console.log(
-          `✅ Transaksi SEWA #${tx.id} ditutup otomatis via RFID (${uid})`,
-        );
+      if (!activeSewa || activeSewa.length === 0) {
+        broadcastSSE({
+          type: "RFID_FAILED",
+          message: "⚠️ Stiker terbaca, tetapi tidak ditemukan transaksi SEWA yang aktif.",
+        });
+        return;
       }
+
+      const tx = activeSewa[0];
+      await supabase
+        .from("transactions")
+        .update({
+          status_transaksi: "COMPLETED",
+          waktu_kembali: new Date().toISOString(),
+        })
+        .eq("id", tx.id);
+      await supabase
+        .from("lockers")
+        .update({ is_occupied: true, last_status_change: new Date() })
+        .eq("id", tx.locker_id);
+      await supabase.from("otp_codes").delete().eq("user_id", tx.user_id);
+
+      activeNfcSession.waitingRfidReturn = false;
+      const live = await calculateLiveAvailability();
+      broadcastSSE({ type: "IR_UPDATE", ...live });
+      broadcastSSE({
+        type: "RFID_SUCCESS",
+        uid,
+        message: "🎉 Stiker Valid! Loker terbuka, silakan masukkan payung lalu tutup pintu.",
+      });
     } catch (err) {
       console.error("Gagal update transaksi saat RFID_VALID:", err.message);
     }
-
-    const live = await calculateLiveAvailability();
-    broadcastSSE({ type: "IR_UPDATE", ...live });
-
+  } else if (msg === "RFID_REJECTED_FLOW") {
     broadcastSSE({
-      type: "RFID_SUCCESS",
-      uid: uid,
-      message:
-        "🎉 Stiker Valid! Pintu Loker Berhasil Dibuka & Transaksi Selesai.",
+      type: "RFID_FAILED",
+      message: "❌ Ikuti urutan: Tekan Push Button → Tap HP NFC → Pilih menu Scan RFID di Web terlebih dahulu.",
     });
   } else if (msg === "RFID_INVALID") {
     broadcastSSE({
       type: "RFID_FAILED",
       message: "❌ Tekan tombol push button terlebih dahulu sebelum tap HP.",
     });
+  } else if (msg === "RFID_RETURN_FULL") {
+    broadcastSSE({
+      type: "RFID_FAILED",
+      message: "❌ Semua loker pengembalian sedang penuh. Silakan hubungi Customer Service/Admin.",
+    });
+  } else if (msg === "DOOR_TAMPER") {
+    broadcastSSE({
+      type: "DOOR_TAMPER",
+      message: "⚠️ PERINGATAN: Terdeteksi pintu dibuka-tutup berulang kali! Segera tutup pintu dengan rapat.",
+    });
   } else if (msg === "DOOR_CLOSED") {
-    activeNfcSession = { unlocked: false, uid: null, expiresAt: 0 };
+    activeNfcSession = { unlocked: false, uid: null, expiresAt: 0, waitingRfidReturn: false };
     broadcastSSE({
       type: "DOOR_CLOSED",
-      message: "🔒 Pintu loker telah ditutup dan dikunci aman. Terima kasih!",
+      message: "🔒 Pintu loker telah ditutup dan dikunci aman. Sesi selesai, terima kasih!",
+    });
+  } else if (msg === "DOOR_CLOSED_WARN") {
+    activeNfcSession = { unlocked: false, uid: null, expiresAt: 0, waitingRfidReturn: false };
+    broadcastSSE({
+      type: "DOOR_CLOSED",
+      message: "⚠️ Pintu loker dikunci, namun sensor mendeteksi payung belum diambil/dimasukkan. Hubungi CS jika butuh bantuan.",
     });
   } else if (msg === "DOOR_TIMEOUT") {
-    activeNfcSession = { unlocked: false, uid: null, expiresAt: 0 };
+    activeNfcSession = { unlocked: false, uid: null, expiresAt: 0, waitingRfidReturn: false };
     broadcastSSE({
       type: "DOOR_TIMEOUT",
-      message: "⏱️ Waktu buka pintu habis, loker dikunci otomatis.",
+      message: "⏱️ Batas waktu pintu habis! Segera tutup pintu loker hingga rapat.",
     });
   }
 });
@@ -213,53 +259,73 @@ function generateOTP() {
   return Math.floor(1000 + Math.random() * 9000).toString();
 }
 
-// -------------------------------------------------------------
-// 1. TRANSAKSI BARU (SEWA / TITIP + DETAIL PEMOTONGAN SALDO)
-// -------------------------------------------------------------
 app.post("/api/transaction", async (req, res) => {
   const { nama, email, bank, no_rek, type } = req.body;
-  const cleanEmail = email.trim().toLowerCase();
+  if (!nama || !email || !bank || !no_rek || !type) {
+    return res.status(400).json({ success: false, message: "Data transaksi belum lengkap!" });
+  }
 
+  const cleanEmail = email.trim().toLowerCase();
+  if (activeTxEmails.has(cleanEmail)) {
+    return res.status(429).json({
+      success: false,
+      message: "Transaksi untuk email ini sedang diproses. Mohon tunggu sebentar...",
+    });
+  }
+
+  activeTxEmails.add(cleanEmail);
+  let reservedSlotName = null;
+  
   try {
     const isSewa = type === "SEWA";
-    let targetSlotName = null;
+    const [{ data: lockers }, { data: activeTxs }] = await Promise.all([
+      supabase.from("lockers").select("*"),
+      supabase
+        .from("transactions")
+        .select("locker_id")
+        .eq("status_transaksi", "ACTIVE"),
+    ]);
 
-    if (isSewa) {
-      if (irState.ir1 === 1) targetSlotName = "SEWA_1";
-      else if (irState.ir2 === 1) targetSlotName = "SEWA_2";
-      else
-        return res
-          .status(400)
-          .json({
-            success: false,
-            message: "Stok Payung Habis! (IR mendeteksi loker sewa kosong)",
-          });
-    } else {
-      if (irState.ir4 === 0) targetSlotName = "TITIP_1";
-      else if (irState.ir5 === 0) targetSlotName = "TITIP_2";
-      else
-        return res
-          .status(400)
-          .json({
-            success: false,
-            message: "Loker Titip Penuh! (IR mendeteksi loker titip terisi)",
-          });
+    const lockerByName = {};
+    (lockers || []).forEach((l) => {
+      lockerByName[l.slot_name] = l;
+    });
+    const activeLockerIds = new Set((activeTxs || []).map((t) => t.locker_id));
+
+    const candidates = isSewa
+      ? [
+          { slotName: "SEWA_1", irReady: irState.ir1 === 1 },
+          { slotName: "SEWA_2", irReady: irState.ir2 === 1 },
+        ]
+      : [
+          { slotName: "TITIP_1", irReady: irState.ir4 === 0 },
+          { slotName: "TITIP_2", irReady: irState.ir5 === 0 },
+        ];
+    
+        let selectedLocker = null;
+    for (const c of candidates) {
+      const locker = lockerByName[c.slotName];
+      if (
+        locker &&
+        c.irReady &&
+        !lockedSlots.has(c.slotName) &&
+        !activeLockerIds.has(locker.id)
+      ) {
+        selectedLocker = locker;
+        reservedSlotName = c.slotName;
+        lockedSlots.add(reservedSlotName);
+        break;
+      }
     }
 
-    const { data: lockers } = await supabase
-      .from("lockers")
-      .select("*")
-      .eq("slot_name", targetSlotName)
-      .limit(1);
-    if (!lockers || lockers.length === 0) {
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: `Loker '${targetSlotName}' tidak ditemukan!`,
-        });
+    if (!selectedLocker) {
+      return res.status(400).json({
+        success: false,
+        message: isSewa
+          ? "Stok Payung Habis atau sedang diproses pengguna lain!"
+          : "Loker Titip Penuh atau sedang diproses pengguna lain!",
+      });
     }
-    const selectedLocker = lockers[0];
 
     let userId;
     const { data: existingUsers } = await supabase
@@ -350,19 +416,39 @@ app.post("/api/transaction", async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ success: false, message: "Server error" });
+  } finally {
+    activeTxEmails.delete(cleanEmail);
+    if (reservedSlotName) {
+      lockedSlots.delete(reservedSlotName);
+    }
   }
 });
 
-// -------------------------------------------------------------
-// 2. REQUEST KODE OTP (HAPUS OTP LAMA SEBELUM BUAT BARU)
-// -------------------------------------------------------------
 app.post("/api/request-otp", async (req, res) => {
+  if (!isNfcSessionValid()) {
+    return res.status(403).json({
+      success: false,
+      message: "Sesi NFC belum aktif. Silakan tekan Push Button & tap HP NFC ke loker terlebih dahulu.",
+    });
+  }
+
   const { email, type } = req.body;
   if (!email)
     return res
       .status(400)
       .json({ success: false, message: "Email wajib diisi!" });
   const cleanEmail = email.trim().toLowerCase();
+  const cooldownKey = `${cleanEmail}:${type}`;
+  const now = Date.now();
+  const nextAllowedAt = otpRequestCooldown.get(cooldownKey) || 0;
+
+  if (now < nextAllowedAt) {
+    const sisaDetik = Math.ceil((nextAllowedAt - now) / 1000);
+    return res.status(429).json({
+      success: false,
+      message: `Mohon tunggu ${sisaDetik} detik sebelum meminta kode OTP baru.`,
+    });
+  }
 
   try {
     const { data: users } = await supabase
@@ -419,12 +505,36 @@ app.post("/api/request-otp", async (req, res) => {
         });
     }
 
-    console.log(
-      `📧 [EMAIL OTP] Kode OTP untuk User ID #${activeUserId} (${cleanEmail} - ${type}): ${otp}`,
-    );
+    if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
+      return res.status(500).json({
+        success: false,
+        message: "Konfigurasi SMTP email di server (.env) belum diisi.",
+      });
+    }
+
+    const subjekLayanan =
+      type === "SEWA" ? "Pengembalian Payung Sewa" : "Pengambilan Payung Titipan";
+
+    await mailTransporter.sendMail({
+      from: `"PayungTeduh Smart Locker" <${process.env.SMTP_USER}>`,
+      to: cleanEmail,
+      subject: `[PayungTeduh] Kode OTP ${subjekLayanan}: ${otp}`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 480px; margin: auto; padding: 20px; border: 1px solid #cbd5e1; border-radius: 12px;">
+          <h2 style="color: #075985; margin-bottom: 8px;">☂️ PayungTeduh Smart Locker</h2>
+          <p style="color: #334155; font-size: 14px;">Halo, berikut adalah kode OTP verifikasi Anda untuk layanan <b>${subjekLayanan}</b>:</p>
+          <div style="background: #f1f5f9; padding: 16px; text-align: center; border-radius: 8px; margin: 16px 0;">
+            <span style="font-size: 32px; font-weight: bold; letter-spacing: 8px; color: #0f172a;">${otp}</span>
+          </div>
+          <p style="color: #64748b; font-size: 12px;">Kode ini berlaku selama <b>5 menit</b> dan hanya dapat digunakan satu kali. Jangan bagikan kode ini kepada siapa pun.</p>
+        </div>
+      `,
+    });
+
+    otpRequestCooldown.set(cooldownKey, Date.now() + 30 * 1000);
     return res.json({
       success: true,
-      message: `Kode OTP verifikasi terkirim!`,
+      message: `Kode OTP 4 digit telah dikirim ke email ${cleanEmail}. Silakan cek kotak masuk/spam di HP Anda!`,
     });
   } catch (err) {
     console.error(err);
@@ -434,9 +544,6 @@ app.post("/api/request-otp", async (req, res) => {
   }
 });
 
-// -------------------------------------------------------------
-// 3. VERIFIKASI KODE OTP (SEKALI PAKAI — LANGSUNG HAPUS OTP)
-// -------------------------------------------------------------
 app.post("/api/verify-otp", async (req, res) => {
   const { email, otp, type } = req.body;
   if (!email || !otp)
@@ -567,9 +674,6 @@ app.post("/api/verify-otp", async (req, res) => {
   }
 });
 
-// -------------------------------------------------------------
-// 4. ENDPOINT ADMIN DASHBOARD & CRUD (UPDATE + DELETE)
-// -------------------------------------------------------------
 function verifyAdmin(req, res) {
   const adminPass = req.headers["x-admin-password"];
   const validPass = process.env.ADMIN_PASSWORD || "infonekak";
@@ -580,7 +684,6 @@ function verifyAdmin(req, res) {
   return true;
 }
 
-// READ: Ambil semua data dashboard
 app.get("/api/admin/dashboard", async (req, res) => {
   if (!verifyAdmin(req, res)) return;
 
@@ -637,7 +740,6 @@ app.get("/api/admin/dashboard", async (req, res) => {
   }
 });
 
-// UPDATE: Edit data transaksi/user ATAU selesaikan paksa transaksi aktif
 app.put("/api/admin/transactions/:id", async (req, res) => {
   if (!verifyAdmin(req, res)) return;
 
@@ -659,7 +761,6 @@ app.put("/api/admin/transactions/:id", async (req, res) => {
     }
     const tx = txList[0];
 
-    // Mode 1: Selesaikan paksa transaksi aktif
     if (action === "COMPLETE") {
       const isSewa = tx.type === "SEWA";
       const { data: updatedTx, error: updErr } = await supabase
@@ -694,7 +795,6 @@ app.put("/api/admin/transactions/:id", async (req, res) => {
       return res.json({ success: true, message: `Transaksi #${txId} berhasil diselesaikan.` });
     }
 
-    // Mode 2: Update data pengguna & detail transaksi dari modal edit
     if (tx.user_id && (nama_lengkap !== undefined || email !== undefined || bank_wallet !== undefined || nomor_rekening !== undefined)) {
       const userUpdates = {};
       if (nama_lengkap !== undefined) userUpdates.nama_lengkap = nama_lengkap.trim();
@@ -761,7 +861,6 @@ app.put("/api/admin/transactions/:id", async (req, res) => {
   }
 });
 
-// DELETE: Hapus transaksi dari database
 app.delete("/api/admin/transactions/:id", async (req, res) => {
   if (!verifyAdmin(req, res)) return;
 
@@ -817,7 +916,6 @@ app.delete("/api/admin/transactions/:id", async (req, res) => {
   }
 });
 
-// ACTION ADMIN: Buka pintu loker darurat via MQTT
 app.post("/api/admin/lockers/:slot_name/unlock", async (req, res) => {
   if (!verifyAdmin(req, res)) return;
 

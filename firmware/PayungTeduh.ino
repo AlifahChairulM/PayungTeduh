@@ -65,6 +65,9 @@ bool sistemAktifNFC = false;
 unsigned long waktuAktifNFC = 0;
 const unsigned long TIMEOUT_SESI_NFC = 60000;
 
+// Penanda apakah user sudah masuk menu Scan Stiker RFID di web
+bool modeTungguRfidReturn = false;
+
 // Variabel status dan batas waktu (90 detik) tampilan interaksi web pada layar OLED
 bool webInteraksiAktif = false;
 unsigned long waktuWebInteraksi = 0;
@@ -72,16 +75,21 @@ const unsigned long TIMEOUT_WEB_INTERAKSI = 90000;
 
 // Variabel status pintu loker yang sedang terbuka beserta batas waktu maksimalnya (60 detik)
 bool pintuTerbuka = false;
+bool pintuPernahDibuka = false;
+bool pintuSedangDitutup = false;
+bool peringatanPintuAktif = false;
+int jumlahSiklusBukaTutup = 0;
+
 int slotAktif = 0;
 String namaSlotAktif = "";
 String aksiAktif = ""; // "SEWA", "TITIP", "RETURN", "RETRIEVE"
-unsigned long waktuBuka = 0;
-const unsigned long TIMEOUT_PINTU = 60000;
 
-// Variabel penanda pintu sudah ditutup dan jeda waktu penguncian otomatis (5 detik)
-bool pintuSedangDitutup = false;
+unsigned long waktuBuka = 0;
 unsigned long waktuTutup = 0;
-const unsigned long JEDA_KUNCI = 5000;
+unsigned long waktuMulaiLepas = 0;
+unsigned long waktuMulaiTekan = 0;
+unsigned long jedaKunciAktif = 5000;
+const unsigned long TIMEOUT_PINTU = 60000;
 
 // Menyimpan status pembacaan sensor IR terakhir agar pengiriman MQTT hanya saat ada perubahan
 String lastIRStatus = "";
@@ -98,6 +106,15 @@ void tampilkanStatusWeb(String judul, String baris1, String baris2);
 void tampilkanInstruksiPintu(unsigned long sisaDetik);
 void bunyikanBuzzer(int jumlah = 1, int durasi = 150);
 void kirimStatusIR();
+
+int bacaLimitSwitch(int slot)
+{
+  if (slot == 1) return digitalRead(LIMIT_SW_1);
+  if (slot == 2) return digitalRead(LIMIT_SW_2);
+  if (slot == 4) return digitalRead(LIMIT_SW_4);
+  if (slot == 5) return digitalRead(LIMIT_SW_5);
+  return LOW;
+}
 
 void setup()
 {
@@ -238,27 +255,396 @@ void loop()
         tampilkanInstruksiPintu((TIMEOUT_PINTU - elapsed) / 1000);
       }
     }
-    else
+    else if (!peringatanPintuAktif)
     {
-      tutupPintuOtomatis();
+      // Pintu belum ditutup melewati 60 detik: JANGAN kunci servo dulu, tahan peringatan!
+      peringatanPintuAktif = true;
+      bunyikanBuzzer(3, 200);
+
+      display.clearDisplay();
+      display.setCursor(0, 6);
+      display.print("PERINGATAN PINTU!");
+      display.drawLine(0, 18, 127, 18, WHITE);
+      display.setCursor(0, 28);
+      display.print("Loker ");
+      display.print(namaSlotAktif);
+      display.setCursor(0, 42);
+      display.print("Belum Ditutup Rapat!");
+      display.display();
+
+      client.publish(topicStatus, "DOOR_TIMEOUT");
+      Serial.println("PERINGATAN: Batas waktu pintu habis, menunggu Limit Switch ditutup...");
     }
   }
 
   // Deteksi penutupan pintu fisik melalui Limit Switch pada slot yang sedang terbuka
   if (pintuTerbuka)
   {
-    bool sensorTertutup = false;
-    if (slotAktif == 1 && digitalRead(LIMIT_SW_1) == LOW) sensorTertutup = true;
-    if (slotAktif == 2 && digitalRead(LIMIT_SW_2) == LOW) sensorTertutup = true;
-    if (slotAktif == 4 && digitalRead(LIMIT_SW_4) == LOW) sensorTertutup = true;
-    if (slotAktif == 5 && digitalRead(LIMIT_SW_5) == LOW) sensorTertutup = true;
-
-    if (sensorTertutup && !pintuSedangDitutup)
+    int statusLimit = bacaLimitSwitch(slotAktif);
+    
+    // FASE 1: Kunci servo sudah terbuka (90°), menunggu user mengangkat pintu pertama kali
+    if (!pintuPernahDibuka)
     {
-      pintuSedangDitutup = true;
-      waktuTutup = millis();
-      bunyikanBuzzer(1, 100);
+      if (statusLimit == HIGH)
+      {
+        if (waktuMulaiLepas == 0) waktuMulaiLepas = millis();
+        if (millis() - waktuMulaiLepas >= 150)
+        {
+          pintuPernahDibuka = true;
+          waktuMulaiLepas = 0;
+          waktuBuka = millis(); // Reset batas waktu 60 detik mulai saat pintu benar-benar terbuka
+          tampilkanInstruksiPintu(TIMEOUT_PINTU / 1000);
+          Serial.println("Pintu berhasil dibuka oleh user.");
+        }
+      }
+      else
+      {
+        waktuMulaiLepas = 0;
+        unsigned long elapsedTunggu = millis() - waktuBuka;
+
+        if (elapsedTunggu < TIMEOUT_PINTU)
+        {
+          static unsigned long lastWaitTick = 0;
+          if (millis() - lastWaitTick >= 1000)
+          {
+            lastWaitTick = millis();
+            display.clearDisplay();
+            display.setCursor(0, 4);
+            display.print("KUNCI TERBUKA!");
+            display.drawLine(0, 16, 127, 16, WHITE);
+            display.setCursor(0, 24);
+            display.print("Angkat pintu loker");
+            display.setCursor(0, 36);
+            display.print("Slot: ");
+            display.print(namaSlotAktif);
+            display.setCursor(0, 52);
+            display.print("Batal otomatis: ");
+            display.print((TIMEOUT_PINTU - elapsedTunggu) / 1000);
+            display.print("d");
+            display.display();
+          }
+        }
+        else
+        {
+          // User tidak kunjung mengangkat pintu sampai 60 detik -> aman langsung kunci kembali
+          kunciPintu(slotAktif);
+          pintuTerbuka = false;
+          webInteraksiAktif = false;
+          modeTungguRfidReturn = false;
+
+          display.clearDisplay();
+          display.setCursor(0, 15);
+          display.print("WAKTU HABIS!");
+          display.setCursor(0, 35);
+          display.print("Pintu tidak dibuka,");
+          display.setCursor(0, 48);
+          display.print("dikunci otomatis.");
+          display.display();
+          delay(2000);
+
+          tampilkanIdle();
+          client.publish(topicStatus, "DOOR_TIMEOUT");
+        }
+      }
     }
+    // FASE 2 & 3: Pintu sudah pernah dibuka user
+    else
+    {
+      // FASE 2: Pintu sedang dalam posisi terbuka (Limit Switch HIGH)
+      if (statusLimit == HIGH)
+      {
+        waktuMulaiTekan = 0;
+
+        // Error Handling: Pintu sempat tertutup (terlepas) lalu dibuka lagi sebelum 5 detik selesai
+        if (pintuSedangDitutup)
+        {
+          pintuSedangDitutup = false;
+          jumlahSiklusBukaTutup++;
+          waktuBuka = millis(); // Beri waktu ulang agar user tidak terburu-buru
+
+          if (jumlahSiklusBukaTutup >= 3)
+          {
+            // Error Handling: User memainkan buka-tutup pintu berulang kali
+            jedaKunciAktif = 2000; // Percepat penguncian setelah ditutup nanti menjadi 2 detik
+            bunyikanBuzzer(3, 100);
+            client.publish(topicStatus, "DOOR_TAMPER");
+
+            display.clearDisplay();
+            display.setCursor(0, 6);
+            display.print("PERINGATAN LOKER!");
+            display.drawLine(0, 18, 127, 18, WHITE);
+            display.setCursor(0, 28);
+            display.print("Jangan memainkan");
+            display.setCursor(0, 42);
+            display.print("buka-tutup pintu!");
+            display.display();
+            delay(1500);
+          }
+          else
+          {
+            // Pintu terlepas lalu dibuka kembali untuk mengambil/menaruh payung
+            bunyikanBuzzer(1, 80);
+            display.clearDisplay();
+            display.setCursor(0, 6);
+            display.print("PINTU DIBUKA ULANG");
+            display.drawLine(0, 18, 127, 18, WHITE);
+            display.setCursor(0, 28);
+            display.print("Silakan selesaikan");
+            display.setCursor(0, 42);
+            display.print("lalu tutup rapat!");
+            display.display();
+            delay(1200);
+          }
+        }
+
+        unsigned long elapsedBuka = millis() - waktuBuka;
+        if (elapsedBuka < TIMEOUT_PINTU)
+        {
+          static unsigned long lastDoorTick = 0;
+          if (millis() - lastDoorTick >= 1000)
+          {
+            lastDoorTick = millis();
+            tampilkanInstruksiPintu((TIMEOUT_PINTU - elapsedBuka) / 1000);
+          }
+        }
+        else
+        {
+          // Error Handling: Pintu dibiarkan terbuka > 60 detik -> JANGAN kunci servo agar tidak bertabrakan!
+          static unsigned long lastAlarmTick = 0;
+          if (!peringatanPintuAktif)
+          {
+            peringatanPintuAktif = true;
+            client.publish(topicStatus, "DOOR_TIMEOUT");
+          }
+          if (millis() - lastAlarmTick >= 4000)
+          {
+            lastAlarmTick = millis();
+            bunyikanBuzzer(2, 180);
+            display.clearDisplay();
+            display.setCursor(0, 6);
+            display.print("PERINGATAN PINTU!");
+            display.drawLine(0, 18, 127, 18, WHITE);
+            display.setCursor(0, 28);
+            display.print("Loker ");
+            display.print(namaSlotAktif);
+            display.setCursor(0, 42);
+            display.print("Belum Ditutup Rapat!");
+            display.display();
+          }
+        }
+      }
+      // FASE 3: Pintu sudah ditutup kembali (Limit Switch kembali LOW)
+      else
+      {
+        if (!pintuSedangDitutup)
+        {
+          if (waktuMulaiTekan == 0) waktuMulaiTekan = millis();
+          if (millis() - waktuMulaiTekan >= 150)
+          {
+            pintuSedangDitutup = true;
+            waktuMulaiTekan = 0;
+            waktuTutup = millis();
+          }
+        }
+        else
+        {
+          unsigned long elapsedClose = millis() - waktuTutup;
+          if (elapsedClose < jedaKunciAktif)
+          {
+            static unsigned long lastCloseTick = 0;
+            if (millis() - lastCloseTick >= 500)
+            {
+              lastCloseTick = millis();
+              unsigned long sisaKunci = ((jedaKunciAktif - elapsedClose) / 1000) + 1;
+              display.clearDisplay();
+              display.setCursor(0, 6);
+              display.print("PINTU TERTUTUP!");
+              display.drawLine(0, 18, 127, 18, WHITE);
+              display.setCursor(0, 28);
+              display.print("Mengunci otomatis");
+              display.setCursor(0, 42);
+              display.print("dalam ");
+              display.print(sisaKunci);
+              display.print(" detik...");
+              display.display();
+            }
+          }
+          else
+          {
+            // Kunci servo & verifikasi status sensor IR akhir
+            kunciPintu(slotAktif);
+            bunyikanBuzzer(1, 150);
+
+            bool irAdaPayung = false;
+            if (slotAktif == 1) irAdaPayung = (digitalRead(IR_1) == LOW);
+            else if (slotAktif == 2) irAdaPayung = (digitalRead(IR_2) == LOW);
+            else if (slotAktif == 4) irAdaPayung = (digitalRead(IR_4) == LOW);
+            else if (slotAktif == 5) irAdaPayung = (digitalRead(IR_5) == LOW);
+
+            bool irSesuai = true;
+            if ((aksiAktif == "SEWA" || aksiAktif == "RETRIEVE") && irAdaPayung) irSesuai = false;
+            if ((aksiAktif == "TITIP" || aksiAktif == "RETURN") && !irAdaPayung) irSesuai = false;
+
+            pintuTerbuka = false;
+            pintuPernahDibuka = false;
+            pintuSedangDitutup = false;
+            peringatanPintuAktif = false;
+            webInteraksiAktif = false;
+            modeTungguRfidReturn = false;
+            jumlahSiklusBukaTutup = 0;
+            jedaKunciAktif = 5000;
+
+            display.clearDisplay();
+            display.setCursor(0, 12);
+            display.print(irSesuai ? "TERIMA KASIH!" : "LOKER TERKUNCI");
+            display.setCursor(0, 30);
+            display.print("Loker ");
+            display.print(namaSlotAktif);
+            display.setCursor(0, 44);
+            display.print(irSesuai ? "Terkunci Aman." : "Cek posisi payung!");
+            display.display();
+            delay(2000);
+
+            tampilkanIdle();
+            if (irSesuai)
+            {
+              client.publish(topicStatus, "DOOR_CLOSED");
+            }
+            else
+            {
+              client.publish(topicStatus, "DOOR_CLOSED_WARN");
+            }
+          }
+        }
+      }
+    }
+  }
+
+  if (rfid.PICC_IsNewCardPresent() && rfid.PICC_ReadCardSerial())
+  {
+    String uid = "";
+    for (byte i = 0; i < rfid.uid.size; i++)
+    {
+      if (rfid.uid.uidByte[i] < 0x10)
+        uid += "0";
+      uid += String(rfid.uid.uidByte[i], HEX);
+      if (i < rfid.uid.size - 1)
+        uid += " ";
+    }
+    uid.toUpperCase();
+
+    bool adalahStikerPayung = (uid == "61 F7 28 B5" || uid == "51 B0 25 B5");
+
+    // 1. Tap stiker RFID payung: HANYA diterima jika user sudah melewati Push Button -> Tap HP -> Menu Return RFID di Web
+    if (adalahStikerPayung)
+    {
+      if (modeTungguRfidReturn && !pintuTerbuka)
+      {
+        modeTungguRfidReturn = false;
+        sistemAktifNFC = false;
+        webInteraksiAktif = false;
+        bunyikanBuzzer(2, 100);
+
+        display.clearDisplay();
+        display.setCursor(0, 10);
+        display.print("STIKER RFID VALID!");
+        display.setCursor(0, 30);
+        display.print("Mengecek slot");
+        display.setCursor(0, 42);
+        display.print("pengembalian...");
+        display.display();
+
+        String pesan = "RFID_VALID:" + uid;
+        client.publish(topicStatus, pesan.c_str());
+
+        int targetSlot = 0;
+        String targetName = "";
+        if (digitalRead(IR_1) == HIGH)
+        {
+          targetSlot = 1;
+          targetName = "SEWA_1";
+        }
+        else if (digitalRead(IR_2) == HIGH)
+        {
+          targetSlot = 2;
+          targetName = "SEWA_2";
+        }
+
+        if (targetSlot > 0)
+        {
+          prosesBukaPintu(targetSlot, targetName, "RETURN");
+        }
+        else
+        {
+          client.publish(topicStatus, "RFID_RETURN_FULL");
+          display.clearDisplay();
+          display.setCursor(0, 10);
+          display.print("PENGEMBALIAN GAGAL");
+          display.setCursor(0, 30);
+          display.print("Semua loker sewa");
+          display.setCursor(0, 42);
+          display.print("sudah penuh!");
+          display.display();
+          delay(2500);
+          tampilkanIdle();
+        }
+      }
+      else
+      {
+        // Ditolak: User belum menekan Push Button, belum tap HP NFC, atau belum pilih Scan RFID di web
+        bunyikanBuzzer(3, 90);
+        display.clearDisplay();
+        display.setCursor(0, 4);
+        display.print("IKUTI PROSEDUR!");
+        display.drawLine(0, 16, 127, 16, WHITE);
+        display.setCursor(0, 24);
+        display.print("1. Tekan Push Button");
+        display.setCursor(0, 36);
+        display.print("2. Tap HP ke Reader");
+        display.setCursor(0, 48);
+        display.print("3. Pilih menu di Web");
+        display.display();
+
+        client.publish(topicStatus, "RFID_REJECTED_FLOW");
+        delay(2500);
+        if (sistemAktifNFC) tampilkanTungguNFC((TIMEOUT_SESI_NFC - (millis() - waktuAktifNFC)) / 1000);
+        else tampilkanIdle();
+      }
+    }
+    // 2. Tap HP NFC: diterima setelah Push Button ditekan (sistemAktifNFC == true)
+    else if (sistemAktifNFC)
+    {
+      sistemAktifNFC = false; // Hentikan hitung mundur OLED segera setelah HP terdeteksi!
+      bunyikanBuzzer(1, 200);
+
+      String pesan = "NFC_SESSION_START:" + uid;
+      client.publish(topicStatus, pesan.c_str());
+      Serial.println("Tap NFC HP berhasil, hitung mundur selesai: " + pesan);
+
+      tampilkanStatusWeb("NFC HP TERDETEKSI", "Akses web dibuka.", "Pilih layanan di HP.");
+    }
+    // 3. Kartu/HP di-tap sebelum Push Button ditekan
+    else
+    {
+      bunyikanBuzzer(2, 100);
+      display.clearDisplay();
+      display.setCursor(0, 8);
+      display.print("TEKAN TOMBOL DULU!");
+      display.drawLine(0, 20, 127, 20, WHITE);
+      display.setCursor(0, 28);
+      display.print("1. Tekan Push Button");
+      display.setCursor(0, 42);
+      display.print("2. Tap HP ke Reader");
+      display.display();
+
+      client.publish(topicStatus, "RFID_INVALID");
+      delay(2500);
+      tampilkanIdle();
+    }
+
+    rfid.PICC_HaltA();
+    rfid.PCD_StopCrypto1();
+    delay(800);
   }
 
   // Jalankan jeda hitung mundur 5 detik sebelum servo mengunci pintu kembali
@@ -290,6 +676,7 @@ void loop()
       kunciPintu(slotAktif);
       pintuTerbuka = false;
       pintuSedangDitutup = false;
+      peringatanPintuAktif = false;
       webInteraksiAktif = false;
 
       display.clearDisplay();
@@ -362,6 +749,7 @@ void loop()
       }
       else
       {
+        client.publish(topicStatus, "RFID_RETURN_FULL");
         display.clearDisplay();
         display.setCursor(0, 10);
         display.print("PENGEMBALIAN GAGAL");
@@ -469,11 +857,22 @@ void callback(char *topic, byte *payload, unsigned int length)
     }
     else if (st == "TAB_RETURN")
     {
-      tampilkanStatusWeb("KEMBALIKAN PAYUNG", "Scan RFID payung", "atau pakai OTP HP.");
+      modeTungguRfidReturn = false;
+      tampilkanStatusWeb("KEMBALIKAN PAYUNG", "Pilih Scan RFID atau", "OTP Email di HP.");
     }
     else if (st == "TAB_RETRIEVE")
     {
       tampilkanStatusWeb("AMBIL TITIPAN", "Masukkan email &", "kode OTP di HP.");
+    }
+    else if (st == "WAIT_RFID_RETURN")
+    {
+      modeTungguRfidReturn = true;
+      tampilkanStatusWeb("SCAN STIKER PAYUNG", "Tempelkan stiker RFID", "payung ke reader...");
+    }
+    else if (st == "CANCEL_RFID_RETURN")
+    {
+      modeTungguRfidReturn = false;
+      tampilkanStatusWeb("KEMBALIKAN PAYUNG", "Pilih metode kembali", "pada layar HP.");
     }
     else if (st == "PAYING")
     {
@@ -591,9 +990,15 @@ void prosesBukaPintu(int slot, String slotName, String actionMode)
     if (slot == 5) servo5.write(90);
 
     pintuTerbuka = true;
+    pintuPernahDibuka = false;
     pintuSedangDitutup = false;
+    peringatanPintuAktif = false;
+    modeTungguRfidReturn = false;
+    jumlahSiklusBukaTutup = 0;
+    jedaKunciAktif = 5000;
+    waktuMulaiLepas = 0;
+    waktuMulaiTekan = 0;
     waktuBuka = millis();
-    tampilkanInstruksiPintu(TIMEOUT_PINTU / 1000);
 
     Serial.println("Pintu Berhasil Dibuka: " + slotName + " (" + actionMode + ")");
   }
@@ -622,6 +1027,7 @@ void tutupPintuOtomatis()
   kunciPintu(slotAktif);
   pintuTerbuka = false;
   pintuSedangDitutup = false;
+  peringatanPintuAktif = false;
   webInteraksiAktif = false;
 
   display.clearDisplay();
