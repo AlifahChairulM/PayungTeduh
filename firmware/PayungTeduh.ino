@@ -109,10 +109,14 @@ void kirimStatusIR();
 
 int bacaLimitSwitch(int slot)
 {
-  if (slot == 1) return digitalRead(LIMIT_SW_1);
-  if (slot == 2) return digitalRead(LIMIT_SW_2);
-  if (slot == 4) return digitalRead(LIMIT_SW_4);
-  if (slot == 5) return digitalRead(LIMIT_SW_5);
+  if (slot == 1)
+    return digitalRead(LIMIT_SW_1);
+  if (slot == 2)
+    return digitalRead(LIMIT_SW_2);
+  if (slot == 4)
+    return digitalRead(LIMIT_SW_4);
+  if (slot == 5)
+    return digitalRead(LIMIT_SW_5);
   return LOW;
 }
 
@@ -126,7 +130,7 @@ void setup()
   if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C))
   {
     for (;;)
-      ;  // Hentikan program jika layar OLED gagal terdeteksi
+      ; // Hentikan program jika layar OLED gagal terdeteksi
   }
   display.clearDisplay();
   display.setTextSize(1);
@@ -190,7 +194,6 @@ void loop()
     reconnectMQTT();
   }
   client.loop();
-
   kirimStatusIR();
 
   // Cek penekanan Push Button untuk mengaktifkan mode tunggu Tap NFC HP
@@ -246,13 +249,14 @@ void loop()
   if (pintuTerbuka)
   {
     int statusLimit = bacaLimitSwitch(slotAktif);
-    
+
     // FASE 1: Kunci servo sudah terbuka (90°), menunggu user mengangkat pintu pertama kali
     if (!pintuPernahDibuka)
     {
       if (statusLimit == HIGH)
       {
-        if (waktuMulaiLepas == 0) waktuMulaiLepas = millis();
+        if (waktuMulaiLepas == 0)
+          waktuMulaiLepas = millis();
         if (millis() - waktuMulaiLepas >= 150)
         {
           pintuPernahDibuka = true;
@@ -403,7 +407,8 @@ void loop()
       {
         if (!pintuSedangDitutup)
         {
-          if (waktuMulaiTekan == 0) waktuMulaiTekan = millis();
+          if (waktuMulaiTekan == 0)
+            waktuMulaiTekan = millis();
           if (millis() - waktuMulaiTekan >= 150)
           {
             pintuSedangDitutup = true;
@@ -441,14 +446,20 @@ void loop()
             bunyikanBuzzer(1, 150);
 
             bool irAdaPayung = false;
-            if (slotAktif == 1) irAdaPayung = (digitalRead(IR_1) == LOW);
-            else if (slotAktif == 2) irAdaPayung = (digitalRead(IR_2) == LOW);
-            else if (slotAktif == 4) irAdaPayung = (digitalRead(IR_4) == LOW);
-            else if (slotAktif == 5) irAdaPayung = (digitalRead(IR_5) == LOW);
+            if (slotAktif == 1)
+              irAdaPayung = (digitalRead(IR_1) == LOW);
+            else if (slotAktif == 2)
+              irAdaPayung = (digitalRead(IR_2) == LOW);
+            else if (slotAktif == 4)
+              irAdaPayung = (digitalRead(IR_4) == LOW);
+            else if (slotAktif == 5)
+              irAdaPayung = (digitalRead(IR_5) == LOW);
 
             bool irSesuai = true;
-            if ((aksiAktif == "SEWA" || aksiAktif == "RETRIEVE") && irAdaPayung) irSesuai = false;
-            if ((aksiAktif == "TITIP" || aksiAktif == "RETURN") && !irAdaPayung) irSesuai = false;
+            if ((aksiAktif == "SEWA" || aksiAktif == "RETRIEVE") && irAdaPayung)
+              irSesuai = false;
+            if ((aksiAktif == "TITIP" || aksiAktif == "RETURN") && !irAdaPayung)
+              irSesuai = false;
 
             pintuTerbuka = false;
             pintuPernahDibuka = false;
@@ -572,8 +583,10 @@ void loop()
 
         client.publish(topicStatus, "RFID_REJECTED_FLOW");
         delay(2500);
-        if (sistemAktifNFC) tampilkanTungguNFC((TIMEOUT_SESI_NFC - (millis() - waktuAktifNFC)) / 1000);
-        else tampilkanIdle();
+        if (sistemAktifNFC)
+          tampilkanTungguNFC((TIMEOUT_SESI_NFC - (millis() - waktuAktifNFC)) / 1000);
+        else
+          tampilkanIdle();
       }
     }
     // 2. Tap HP NFC: diterima setelah Push Button ditekan (sistemAktifNFC == true)
@@ -617,7 +630,7 @@ void loop()
 void kirimStatusIR()
 {
   static unsigned long lastCheck = 0;
-  if (millis() - lastCheck >= 1000) 
+  if (millis() - lastCheck >= 1000)
   {
     lastCheck = millis();
     // Sensor IR bersifat Active-LOW: LOW (0) berarti objek payung terdeteksi (nilai 1)
@@ -631,8 +644,9 @@ void kirimStatusIR()
     if (currentIR != lastIRStatus)
     {
       lastIRStatus = currentIR;
-      if (client.connected()) {
-        client.publish(topicStatus, currentIR.c_str(), true); 
+      if (client.connected())
+      {
+        client.publish(topicStatus, currentIR.c_str(), true);
       }
       Serial.println("Update IR: " + currentIR);
 
@@ -707,10 +721,14 @@ void callback(char *topic, byte *payload, unsigned int length)
     String actionMode = pesan.substring(secondColon + 1);
 
     int slotNum = 0;
-    if (slotName == "SEWA_1") slotNum = 1;
-    else if (slotName == "SEWA_2") slotNum = 2;
-    else if (slotName == "TITIP_1") slotNum = 4;
-    else if (slotName == "TITIP_2") slotNum = 5;
+    if (slotName == "SEWA_1")
+      slotNum = 1;
+    else if (slotName == "SEWA_2")
+      slotNum = 2;
+    else if (slotName == "TITIP_1")
+      slotNum = 4;
+    else if (slotName == "TITIP_2")
+      slotNum = 5;
 
     if (slotNum > 0)
     {
@@ -720,10 +738,14 @@ void callback(char *topic, byte *payload, unsigned int length)
   }
 
   // Fallback kompatibilitas format perintah buka pintu versi lama
-  if (pesan == "UNLOCK_SEWA_1") prosesBukaPintu(1, "SEWA_1", "SEWA");
-  else if (pesan == "UNLOCK_SEWA_2") prosesBukaPintu(2, "SEWA_2", "SEWA");
-  else if (pesan == "UNLOCK_TITIP_1") prosesBukaPintu(4, "TITIP_1", "TITIP");
-  else if (pesan == "UNLOCK_TITIP_2") prosesBukaPintu(5, "TITIP_2", "TITIP");
+  if (pesan == "UNLOCK_SEWA_1")
+    prosesBukaPintu(1, "SEWA_1", "SEWA");
+  else if (pesan == "UNLOCK_SEWA_2")
+    prosesBukaPintu(2, "SEWA_2", "SEWA");
+  else if (pesan == "UNLOCK_TITIP_1")
+    prosesBukaPintu(4, "TITIP_1", "TITIP");
+  else if (pesan == "UNLOCK_TITIP_2")
+    prosesBukaPintu(5, "TITIP_2", "TITIP");
 }
 
 // Menghubungkan ulang ESP32 ke broker MQTT secara otomatis jika koneksi terputus
@@ -736,8 +758,8 @@ void reconnectMQTT()
     clientId += String(random(0xffff), HEX);
     if (client.connect(clientId.c_str()))
     {
-      client.subscribe(topicCommand);  // Berlangganan topik perintah dari server
-      kirimStatusIR();                 // Kirim status sensor IR terbaru segera setelah terhubung
+      client.subscribe(topicCommand); // Berlangganan topik perintah dari server
+      kirimStatusIR();                // Kirim status sensor IR terbaru segera setelah terhubung
     }
     else
     {
@@ -754,23 +776,31 @@ void prosesBukaPintu(int slot, String slotName, String actionMode)
   // Pastikan kondisi fisik slot sesuai: SEWA/RETRIEVE wajib ada payung (LOW), RETURN/TITIP wajib kosong (HIGH)
   if (actionMode == "SEWA")
   {
-    if (slot == 1 && digitalRead(IR_1) == LOW) kondisiFisikOK = true;
-    if (slot == 2 && digitalRead(IR_2) == LOW) kondisiFisikOK = true;
+    if (slot == 1 && digitalRead(IR_1) == LOW)
+      kondisiFisikOK = true;
+    if (slot == 2 && digitalRead(IR_2) == LOW)
+      kondisiFisikOK = true;
   }
   else if (actionMode == "RETURN")
   {
-    if (slot == 1 && digitalRead(IR_1) == HIGH) kondisiFisikOK = true;
-    if (slot == 2 && digitalRead(IR_2) == HIGH) kondisiFisikOK = true;
+    if (slot == 1 && digitalRead(IR_1) == HIGH)
+      kondisiFisikOK = true;
+    if (slot == 2 && digitalRead(IR_2) == HIGH)
+      kondisiFisikOK = true;
   }
   else if (actionMode == "TITIP")
   {
-    if (slot == 4 && digitalRead(IR_4) == HIGH) kondisiFisikOK = true;
-    if (slot == 5 && digitalRead(IR_5) == HIGH) kondisiFisikOK = true;
+    if (slot == 4 && digitalRead(IR_4) == HIGH)
+      kondisiFisikOK = true;
+    if (slot == 5 && digitalRead(IR_5) == HIGH)
+      kondisiFisikOK = true;
   }
   else if (actionMode == "RETRIEVE")
   {
-    if (slot == 4 && digitalRead(IR_4) == LOW) kondisiFisikOK = true;
-    if (slot == 5 && digitalRead(IR_5) == LOW) kondisiFisikOK = true;
+    if (slot == 4 && digitalRead(IR_4) == LOW)
+      kondisiFisikOK = true;
+    if (slot == 5 && digitalRead(IR_5) == LOW)
+      kondisiFisikOK = true;
   }
 
   if (kondisiFisikOK)
@@ -797,10 +827,14 @@ void prosesBukaPintu(int slot, String slotName, String actionMode)
     delay(2500);
 
     // Putar servo slot terkait ke sudut 90 derajat untuk membuka kunci pintu
-    if (slot == 1) servo1.write(90);
-    if (slot == 2) servo2.write(90);
-    if (slot == 4) servo4.write(90);
-    if (slot == 5) servo5.write(90);
+    if (slot == 1)
+      servo1.write(90);
+    if (slot == 2)
+      servo2.write(90);
+    if (slot == 4)
+      servo4.write(90);
+    if (slot == 5)
+      servo5.write(90);
 
     pintuTerbuka = true;
     pintuPernahDibuka = false;
@@ -861,10 +895,14 @@ void tutupPintuOtomatis()
 // Mengembalikan sudut motor servo slot terkait ke 0 derajat untuk mengunci pintu loker
 void kunciPintu(int slot)
 {
-  if (slot == 1) servo1.write(0);
-  if (slot == 2) servo2.write(0);
-  if (slot == 4) servo4.write(0);
-  if (slot == 5) servo5.write(0);
+  if (slot == 1)
+    servo1.write(0);
+  if (slot == 2)
+    servo2.write(0);
+  if (slot == 4)
+    servo4.write(0);
+  if (slot == 5)
+    servo5.write(0);
 
   delay(500);
   Serial.println("Loker Slot " + String(slot) + " Dikunci ke 0 derajat.");
@@ -983,6 +1021,7 @@ void bunyikanBuzzer(int jumlah, int durasi)
     digitalWrite(BUZZER_PIN, HIGH);
     delay(durasi);
     digitalWrite(BUZZER_PIN, LOW);
-    if (i < jumlah - 1) delay(80);
+    if (i < jumlah - 1)
+      delay(80);
   }
 }

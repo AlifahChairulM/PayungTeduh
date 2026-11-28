@@ -199,6 +199,7 @@ async function enterAsUser(skipRemoteCheck = false) {
 
 function backToRoleSelect() {
   clearRfidTimer();
+  notifyOled('CANCEL_RFID_RETURN');
   document.getElementById('main-app-content').classList.add('hidden');
   document.getElementById('role-select-screen').classList.remove('hidden');
   document.getElementById('status-box').classList.add('hidden');
@@ -439,7 +440,7 @@ function selectReturnMethod(method) {
     rfidView.classList.remove('hidden');
     emailView.classList.add('hidden');
     showStatus('Menunggu Scan Stiker RFID pada Alat Physical...', true);
-    notifyOled('TAB_RETURN');
+    notifyOled('WAIT_RFID_RETURN');
 
     let remaining = 45;
     if (countdownEl) {

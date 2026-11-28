@@ -226,6 +226,18 @@ app.post("/api/session-lock", (req, res) => {
 
 app.post("/api/oled-status", (req, res) => {
   const { status } = req.body;
+  if (status === "WAIT_RFID_RETURN") {
+    if (!isNfcSessionValid()) {
+      return res.status(403).json({
+        success: false,
+        message: "Sesi NFC belum aktif. Tekan Push Button dan tap HP NFC terlebih dahulu.",
+      });
+    }
+    activeNfcSession.waitingRfidReturn = true;
+  } else if (status === "CANCEL_RFID_RETURN") {
+    activeNfcSession.waitingRfidReturn = false;
+  }
+
   if (status) {
     mqttClient.publish(topicCmd, `OLED:${status}`);
   }
@@ -260,6 +272,13 @@ function generateOTP() {
 }
 
 app.post("/api/transaction", async (req, res) => {
+  if (!isNfcSessionValid()) {
+    return res.status(403).json({
+      success: false,
+      message: "Sesi NFC belum aktif atau sudah selesai. Tekan Push Button & tap HP NFC terlebih dahulu.",
+    });
+  }
+  
   const { nama, email, bank, no_rek, type } = req.body;
   if (!nama || !email || !bank || !no_rek || !type) {
     return res.status(400).json({ success: false, message: "Data transaksi belum lengkap!" });
@@ -545,6 +564,13 @@ app.post("/api/request-otp", async (req, res) => {
 });
 
 app.post("/api/verify-otp", async (req, res) => {
+  if (!isNfcSessionValid()) {
+    return res.status(403).json({
+      success: false,
+      message: "Sesi NFC belum aktif atau sudah selesai. Tekan Push Button & tap HP NFC terlebih dahulu.",
+    });
+  }
+  
   const { email, otp, type } = req.body;
   if (!email || !otp)
     return res
